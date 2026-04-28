@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Large data files (uploaded to Supabase, not needed in repo)
+exported.json
+cleaned.json
+cleaned-v2.json
+cleaned-part2.json
+part2.json
+
+# Editor
+.vscode/
+*.code-workspace
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*

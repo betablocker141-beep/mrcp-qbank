@@ -1,0 +1,121 @@
+[
+  {
+    "id": "q_mrcp_may2015_010",
+    "part": "Part 1",
+    "system": "Dermatology",
+    "topic": "Morphoea",
+    "year": "May 2015",
+    "difficulty": "Hard",
+    "source": "MRCP",
+    "stem": "An 18-year-old girl presents with asymptomatic skin changes on the left thigh that have become apparent over the last month. Examination reveals a 5cm annular plaque which feels very firm and thickened. There is an erythematous border and the slightly hyperpigmented central skin looks atrophic. Which diagnosis fits best with this clinical picture?",
+    "options": [
+      {
+        "id": "A",
+        "text": "Erythema chronicum migrans"
+      },
+      {
+        "id": "B",
+        "text": "Lichen sclerosus"
+      },
+      {
+        "id": "C",
+        "text": "Morphoea"
+      },
+      {
+        "id": "D",
+        "text": "Pityriasis rosea"
+      },
+      {
+        "id": "E",
+        "text": "Pityriasis versicolor"
+      }
+    ],
+    "correctAnswer": "C",
+    "explanation": "**Morphoea** is the correct answer.\n\n**Key Concept:**\n- The cause of morphoea is uncertain. It typically presents with one or more indurated plaques that are usually initially inflamed especially around the border, leading to an annular appearance. As the sclerotic process progresses, plaques go from thickened to atrophic. Eventually, the inflammation usually subsides and the plaque turns brown or ivory white. Treatment options include potent topical corticosteroids, oral corticosteroids, phototherapy and methotrexate\n\n**Why the others are wrong:**\n\n- **A — Erythema chronicum migrans:** This is the initial manifestation of Lyme disease. There may be a history of tick bite, followed by extending macular erythema that forms an annular lesion; induration is not a feature\n- **B — Lichen sclerosus:** An autoimmune condition that usually affects the genital area; extra-genital lichen sclerosus is unusual. It can cause induration but more commonly results in atrophic changes, strikingly hypopigmented\n- **D — Pityriasis rosea:** Begins with a 'herald patch' followed by widespread truncal plaques with fine peripheral scaling in a Christmas tree configuration; they are superficial and not significantly indurated\n- **E — Pityriasis versicolor:** Caused by overgrowth of Malassezia furfur. Asymptomatic hypo- or hyperpigmented macules with very fine peripheral scaling; very superficial rather than indurated\n\n**Remember:** Morphoea = indurated annular plaque with erythematous border + atrophic centre; NOT systemic sclerosis (no internal organ involvement)",
+    "reference": "MRCP Part 1 May 2015 Past Paper",
+    "tags": [
+      "Dermatology",
+      "Skin",
+      "Morphoea"
+    ],
+    "imageUrl": "",
+    "imageType": null,
+    "imageCaption": ""
+  },
+  {
+    "id": "q_mrcp_sep2025_077",
+    "part": "Part 1",
+    "system": "Cardiology",
+    "topic": "ECG Interpretation",
+    "year": "Sep 2025",
+    "difficulty": "Easy",
+    "source": "MRCP",
+    "stem": "A 32-year-old man presents to the Emergency Department with fatigue, palpitations and dizziness. He is found to have bradycardia and third-degree heart block on ECG. He recently returned from Bolivia, where he had been residing, and experienced several insect bites. What is the most likely causative organism?",
+    "options": [
+      {
+        "id": "A",
+        "text": "Borrelia"
+      },
+      {
+        "id": "B",
+        "text": "Coxiella burnetii"
+      },
+      {
+        "id": "C",
+        "text": "Leptospira"
+      },
+      {
+        "id": "D",
+        "text": "Streptococcus pyogenes"
+      },
+      {
+        "id": "E",
+        "text": "Trypanosoma cruzi"
+      }
+    ],
+    "correctAnswer": "E",
+    "explanation": "**Trypanosoma cruzi** is the correct answer.\n\n**Key Concept:**\n- Trypanosoma cruzi is the causative agent of Chagas disease, also known as American trypanosomiasis, which is endemic to South America, including Bolivia\n- It has 2 phases: acute and chronic\n- Chronic Chagas disease results from the persistent presence of the parasites in the heart, involving the cardiac conduction system, leading to heart block, and also causes left ventricular dysfunction through dilated cardiomyopathy\n\n**Clinical Clues:**\n- 32-year-old patient ➜ age context ➜ guides differential diagnosis\n\n**Why the others are wrong:**\n\n- **A — Borrelia:** Borrelia species, including Borrelia burgdorferi, are associated with Lyme disease and can cause heart block\n- **B — Coxiella burnetii:** Coxiella burnetii causes Q fever, which can lead to endocarditis but typically does not cause heart block\n- **C — Leptospira:** Leptospira can cause leptospirosis, which may affect multiple organs, including the heart\n- **D — Streptococcus pyogenes:** Streptococcus pyogenes can lead to acute rheumatic fever and subsequent valvular heart disease\n\n**Remember:** The patient's travel history and insect bites (likely from triatomine bugs) strongly support this diagnosis",
+    "reference": "MRCP Part 1 September 2025 Past Paper",
+    "tags": [
+      "ECG"
+    ],
+    "imageUrl": "",
+    "imageType": null,
+    "imageCaption": ""
+  },
+  {
+    "id": "q_mrcp1_jan2015_031",
+    "part": "Part 1",
+    "system": "Gastroenterology",
+    "topic": "Gastroenterology",
+    "year": "Jan 2015",
+    "difficulty": "Medium",
+    "source": "MRCP",
+    "stem": "exye BB Art phd Vat You are examining the use of novel secretagogues, which stimulate pancreatic activity and delay gastric emptying for the treatment of obesity. Which of the following is known to stimulate the release of pancreatic enzymes?",
+    "options": [
+      {
+        "id": "A",
+        "text": "CCK"
+      },
+      {
+        "id": "B",
+        "text": "Gastrin"
+      },
+      {
+        "id": "D",
+        "text": "Secretin"
+      },
+      {
+        "id": "E",
+        "text": "VIP"
+      }
+    ],
+    "correctAnswer": "A",
+    "explanation": "**CCK** is the correct answer.\n\n**Key Concept:**\n- Review this topic in detail\n\n**Remember:** CCK",
+    "reference": "MRCP Part 1 January 2015 Past Paper",
+    "tags": [],
+    "imageUrl": "",
+    "imageType": null,
+    "imageCaption": ""
+  }
+]
