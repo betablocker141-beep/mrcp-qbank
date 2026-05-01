@@ -26,7 +26,7 @@ export function addOneLiner(liner: OneLiner): void {
   persist(list);
 }
 
-export function bulkAddOneLiners(liners: OneLiner[]): { added: number; skipped: number } {
+export function bulkAddOneLiners(liners: OneLiner[]): { added: number; updated: number; skipped: number } {
   const list = getOneLiners();
   const key = (l: OneLiner) => `${l.source}::${l.id}`;
   const existingKeys = new Set(list.map(key));
@@ -35,8 +35,9 @@ export function bulkAddOneLiners(liners: OneLiner[]): { added: number; skipped: 
     return incoming ?? l;
   });
   const brandNew = liners.filter((l) => !existingKeys.has(key(l)));
+  const updatedCount = liners.length - brandNew.length;
   persist([...updated, ...brandNew]);
-  return { added: liners.length, skipped: 0 };
+  return { added: brandNew.length, updated: updatedCount, skipped: 0 };
 }
 
 export function updateOneLiner(liner: OneLiner): void {
