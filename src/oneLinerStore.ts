@@ -28,12 +28,13 @@ export function addOneLiner(liner: OneLiner): void {
 
 export function bulkAddOneLiners(liners: OneLiner[]): { added: number; skipped: number } {
   const list = getOneLiners();
-  const existingIds = new Set(list.map((l) => l.id));
+  const key = (l: OneLiner) => `${l.source}::${l.id}`;
+  const existingKeys = new Set(list.map(key));
   const updated = list.map((l) => {
-    const incoming = liners.find((n) => n.id === l.id);
+    const incoming = liners.find((n) => n.id === l.id && n.source === l.source);
     return incoming ?? l;
   });
-  const brandNew = liners.filter((l) => !existingIds.has(l.id));
+  const brandNew = liners.filter((l) => !existingKeys.has(key(l)));
   persist([...updated, ...brandNew]);
   return { added: liners.length, skipped: 0 };
 }
