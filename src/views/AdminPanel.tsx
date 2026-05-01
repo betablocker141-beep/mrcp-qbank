@@ -402,7 +402,7 @@ export default function AdminPanel({ onDataChange }: { onDataChange?: () => void
     const result = bulkAddOneLiners(validated);
     setLiners(getOneLiners());
     setOlJson('');
-    setOlMsg(`✅ Imported ${result.added} one-liner(s). ${result.skipped > 0 ? `${result.skipped} skipped (duplicate IDs).` : ''}`);
+    setOlMsg(`✅ Imported ${result.added} one-liner(s).${result.skipped > 0 ? ` ${result.skipped} skipped (duplicate IDs).` : ''}`);
   };
 
   const tabs: { id: AdminTab; label: string; icon: string }[] = [
