@@ -1137,6 +1137,24 @@ export default function AdminPanel({ onDataChange }: { onDataChange?: () => void
                   );
                 })}
               </div>
+              {/* System breakdown */}
+              {liners.length > 0 && (() => {
+                const bySystem: Record<string, number> = {};
+                liners.forEach(l => { bySystem[l.system] = (bySystem[l.system] ?? 0) + 1; });
+                const entries = Object.entries(bySystem).sort((a, b) => b[1] - a[1]);
+                return (
+                  <div className="border-t border-gray-100 pt-4">
+                    <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">Breakdown by system</p>
+                    <div className="flex flex-wrap gap-2">
+                      {entries.map(([sys, n]) => (
+                        <span key={sys} className="text-xs bg-gray-100 text-gray-700 px-2.5 py-1 rounded-full font-medium">
+                          {sys}: <strong>{n}</strong>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           </div>
         )}
