@@ -11,12 +11,13 @@ import AdminPanel from './views/AdminPanel';
 import AuthView from './views/AuthView';
 import TextbookView from './views/TextbookView';
 import OneLinerView from './views/OneLinerView';
+import MockTestView from './views/MockTestView';
 import {
   HomeIcon, BookOpenIcon, BarChartIcon, SettingsIcon,
   LogOutIcon, ChevronDownIcon, ActivityIcon, LockIcon,
 } from './components/Icons';
 
-export type View = 'dashboard' | 'bank' | 'quiz' | 'results' | 'stats' | 'admin' | 'textbooks' | 'oneliners';
+export type View = 'dashboard' | 'bank' | 'quiz' | 'results' | 'stats' | 'admin' | 'textbooks' | 'oneliners' | 'mock';
 
 function getInitials(name: string) {
   return name.split(' ').map((n) => n[0]).join('').toUpperCase().slice(0, 2);
@@ -52,6 +53,7 @@ function Navbar({
   const navItems: { label: string; view: View; icon: React.ReactNode }[] = [
     { label: 'Dashboard', view: 'dashboard', icon: <HomeIcon className="w-4 h-4" /> },
     { label: 'Question Bank', view: 'bank', icon: <BookOpenIcon className="w-4 h-4" /> },
+    { label: 'Mock Tests', view: 'mock', icon: <span className="text-sm">🏆</span> },
     { label: 'Textbooks', view: 'textbooks', icon: <span className="text-sm">📚</span> },
     { label: 'Pearls', view: 'oneliners', icon: <span className="text-sm">💡</span> },
     { label: 'Performance', view: 'stats', icon: <BarChartIcon className="w-4 h-4" /> },
@@ -166,6 +168,10 @@ function Navbar({
                     <button onClick={() => { setView('bank'); setUserMenuOpen(false); }}
                       className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-gray-700 hover:bg-blue-50 hover:text-blue-700 transition text-sm font-medium">
                       <BookOpenIcon className="w-4 h-4" /> Question Bank
+                    </button>
+                    <button onClick={() => { setView('mock'); setUserMenuOpen(false); }}
+                      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-gray-700 hover:bg-amber-50 hover:text-amber-700 transition text-sm font-medium">
+                      <span>🏆</span> Mock Tests
                     </button>
                     <button onClick={() => { setView('textbooks'); setUserMenuOpen(false); }}
                       className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-gray-700 hover:bg-violet-50 hover:text-violet-700 transition text-sm font-medium">
@@ -354,6 +360,15 @@ export function App() {
       )}
 
       {view === 'stats' && <StatsView activePart={activePart} />}
+
+      {view === 'mock' && (
+        <MockTestView
+          questions={questions}
+          activePart={activePart}
+          startQuiz={startQuiz}
+          isLoading={isLoading}
+        />
+      )}
 
       {view === 'textbooks' && <TextbookView />}
 
