@@ -1,4 +1,5 @@
 import { User, UserRole } from './types';
+import { supabase } from './lib/supabase';
 
 const USERS_KEY = 'mrcp_users';
 const SESSION_KEY = 'mrcp_auth_session';
@@ -153,9 +154,60 @@ export function deleteUser(id: string) {
 export function updateUserRole(id: string, role: UserRole) {
   const users = loadUsers().map((u) => (u.id === id ? { ...u, role } : u));
   saveUsers(users);
-  // update session if current user
   const session = getSession();
-  if (session?.id === id) {
-    startSession({ ...session, role });
+  if (session?.id === id) startSession({ ...session, role });
+}
+
+// ── Subscription (Supabase-backed) ────────────────────────────
+/**
+ * Checks Supabase for the user's subscription status.
+ * Returns true if subscribed. Admins always get true.
+ */
+export async function checkSubscription(email: string, role: UserRole): Promise<boolean> {
+  if (role === 'admin') return true;
+  try {
+    const { data } = await supabase
+      .from('subscriptions')
+      .select('subscribed')
+      .eq('email', email.toLowerCase())
+      .single();
+    return (data as { subscribed: boolean } | null)?.subscribed ?? false;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Admin sets subscription status for a user by email.
+ */
+export async function setSubscription(
+  email: string,
+  subscribed: boolean,
+  activatedBy: string,
+): Promise<void> {
+  await supabase.from('subscriptions').upsert(
+    {
+      email: email.toLowerCase(),
+      subscribed,
+      activated_at: new Date().toISOString(),
+      activated_by: activatedBy,
+    },
+    { onConflict: 'email' },
+  );
+}
+
+/**
+ * Fetch all subscription records for displaying in admin panel.
+ */
+export async function getAllSubscriptions(): Promise<
+  { email: string; subscribed: boolean; activated_at: string | null }[]
+> {
+  try {
+    const { data } = await supabase
+      .from('subscriptions')
+      .select('email, subscribed, activated_at');
+    return (data ?? []) as { email: string; subscribed: boolean; activated_at: string | null }[];
+  } catch {
+    return [];
   }
 }
