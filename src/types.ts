@@ -24,7 +24,8 @@ export interface User {
   email: string;
   role: UserRole;
   createdAt: string;
-  avatar?: string; // initials-based
+  avatar?: string;
+  subscribed?: boolean; // true = premium access granted by admin
 }
 
 export interface Option {

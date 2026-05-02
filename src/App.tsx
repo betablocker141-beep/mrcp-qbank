@@ -13,13 +13,18 @@ import TextbookView from './views/TextbookView';
 import OneLinerView from './views/OneLinerView';
 import MockTestView from './views/MockTestView';
 import DailyMockView from './views/DailyMockView';
+import UpgradeView from './views/UpgradeView';
 import { saveDailyResult, getTodayUTC } from './dailyMockStore';
+import { checkSubscription } from './authStore';
 import {
   HomeIcon, BookOpenIcon, BarChartIcon, SettingsIcon,
   LogOutIcon, ChevronDownIcon, ActivityIcon, LockIcon,
 } from './components/Icons';
 
-export type View = 'dashboard' | 'bank' | 'quiz' | 'results' | 'stats' | 'admin' | 'textbooks' | 'oneliners' | 'mock' | 'daily-mock';
+export type View = 'dashboard' | 'bank' | 'quiz' | 'results' | 'stats' | 'admin' | 'textbooks' | 'oneliners' | 'mock' | 'daily-mock' | 'upgrade';
+
+// Views that require a subscription (admin always bypasses)
+const PREMIUM_VIEWS: View[] = ['dashboard', 'bank', 'quiz', 'results', 'mock', 'stats', 'textbooks', 'oneliners'];
 
 function getInitials(name: string) {
   return name.split(' ').map((n) => n[0]).join('').toUpperCase().slice(0, 2);
@@ -52,14 +57,17 @@ function Navbar({
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const isAdmin = user.role === 'admin';
 
-  const navItems: { label: string; view: View; icon: React.ReactNode }[] = [
-    { label: 'Dashboard', view: 'dashboard', icon: <HomeIcon className="w-4 h-4" /> },
-    { label: 'Question Bank', view: 'bank', icon: <BookOpenIcon className="w-4 h-4" /> },
-    { label: 'Daily Mock', view: 'daily-mock', icon: <span className="text-sm">🎯</span> },
-    { label: 'Mock Tests', view: 'mock', icon: <span className="text-sm">🏆</span> },
-    { label: 'Textbooks', view: 'textbooks', icon: <span className="text-sm">📚</span> },
-    { label: 'Pearls', view: 'oneliners', icon: <span className="text-sm">💡</span> },
-    { label: 'Performance', view: 'stats', icon: <BarChartIcon className="w-4 h-4" /> },
+  const isSubscribed = user.subscribed || user.role === 'admin';
+  const lock = <span className="text-[10px] opacity-60">🔒</span>;
+
+  const navItems: { label: string; view: View; icon: React.ReactNode; premium?: boolean }[] = [
+    { label: 'Dashboard',     view: 'dashboard',  icon: <HomeIcon className="w-4 h-4" />,          premium: true },
+    { label: 'Question Bank', view: 'bank',        icon: <BookOpenIcon className="w-4 h-4" />,      premium: true },
+    { label: 'Daily Mock',    view: 'daily-mock',  icon: <span className="text-sm">🎯</span> },
+    { label: 'Mock Tests',    view: 'mock',        icon: <span className="text-sm">🏆</span>,        premium: true },
+    { label: 'Textbooks',     view: 'textbooks',   icon: <span className="text-sm">📚</span>,        premium: true },
+    { label: 'Pearls',        view: 'oneliners',   icon: <span className="text-sm">💡</span>,        premium: true },
+    { label: 'Performance',   view: 'stats',       icon: <BarChartIcon className="w-4 h-4" />,      premium: true },
   ];
 
   return (
@@ -99,20 +107,26 @@ function Navbar({
 
           {/* Nav Items */}
           <div className="flex items-center gap-1 flex-1 justify-end">
-            {navItems.map((item) => (
-              <button
-                key={item.view}
-                onClick={() => setView(item.view)}
-                className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
-                  currentView === item.view
-                    ? 'bg-blue-600 text-white shadow-md'
-                    : 'text-blue-200 hover:bg-white/10 hover:text-white'
-                }`}
-              >
-                {item.icon}
-                <span className="hidden md:inline">{item.label}</span>
-              </button>
-            ))}
+            {navItems.map((item) => {
+              const locked = item.premium && !isSubscribed;
+              return (
+                <button
+                  key={item.view}
+                  onClick={() => setView(item.view)}
+                  className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+                    currentView === item.view
+                      ? 'bg-blue-600 text-white shadow-md'
+                      : locked
+                      ? 'text-blue-400/60 hover:bg-white/10 hover:text-blue-200'
+                      : 'text-blue-200 hover:bg-white/10 hover:text-white'
+                  }`}
+                >
+                  {item.icon}
+                  <span className="hidden md:inline">{item.label}</span>
+                  {locked && lock}
+                </button>
+              );
+            })}
 
             {isAdmin && (
               <button
@@ -246,13 +260,24 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    // Show loading only if cache is empty; otherwise sync silently in background
     refreshQuestions(getQuestions().length === 0);
   }, []);
 
+  // Check subscription status from Supabase on every login
+  useEffect(() => {
+    if (!user) return;
+    checkSubscription(user.email, user.role).then((subscribed) => {
+      if (subscribed !== !!user.subscribed) {
+        setUser((u) => u ? { ...u, subscribed } : u);
+      }
+    });
+  }, [user?.email]);
+
   function handleAuth(authedUser: User) {
     setUser(authedUser);
-    setView('dashboard');
+    // Free users land on daily-mock; subscribed users and admins go to dashboard
+    const sub = authedUser.subscribed || authedUser.role === 'admin';
+    setView(sub ? 'dashboard' : 'daily-mock');
   }
 
   function handleLogout() {
@@ -338,8 +363,14 @@ export function App() {
     setView('bank');
   }, []);
 
+  const isSubscribed = !!(user?.subscribed) || user?.role === 'admin';
+
   const navigateTo = (v: View) => {
     if (view === 'quiz') return;
+    if (!isSubscribed && PREMIUM_VIEWS.includes(v)) {
+      setView('upgrade');
+      return;
+    }
     setView(v);
   };
 
@@ -398,6 +429,10 @@ export function App() {
           onNewQuiz={() => setView('bank')}
           onDashboard={() => setView('dashboard')}
         />
+      )}
+
+      {view === 'upgrade' && (
+        <UpgradeView onGoToDaily={() => setView('daily-mock')} />
       )}
 
       {view === 'daily-mock' && (
