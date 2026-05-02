@@ -598,6 +598,40 @@ export default function Dashboard({
         </div>
       )}
 
+      {/* ── Daily Mock Banner ────────────────────────────────────────────────── */}
+      <div className="max-w-7xl mx-auto px-4 pb-6">
+        <button
+          onClick={() => setView('daily-mock')}
+          className="group w-full relative overflow-hidden bg-gradient-to-r from-slate-900 via-indigo-900 to-slate-900 rounded-2xl p-6 shadow-xl hover:shadow-2xl transition-all text-left hover:-translate-y-0.5 border border-white/10"
+        >
+          {/* Decorative blobs */}
+          <div className="absolute -top-10 -right-10 w-48 h-48 rounded-full bg-indigo-500/15 pointer-events-none" />
+          <div className="absolute -bottom-8 left-1/3 w-32 h-32 rounded-full bg-blue-500/10 pointer-events-none" />
+
+          <div className="relative flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div className="flex items-center gap-4">
+              <div className="w-14 h-14 bg-white/10 rounded-2xl flex items-center justify-center text-3xl shadow-sm border border-white/10 flex-shrink-0">
+                🎯
+              </div>
+              <div>
+                <div className="inline-flex items-center gap-1.5 bg-amber-500/20 border border-amber-400/30 text-amber-300 text-xs font-bold px-2.5 py-1 rounded-full mb-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                  Daily Challenge
+                </div>
+                <h3 className="text-white text-lg font-extrabold">Today's Daily Mock Exam</h3>
+                <p className="text-blue-300 text-sm">
+                  20 questions · Same for everyone · Part 1 & Part 2 · Live leaderboard
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 bg-white text-slate-900 font-extrabold text-sm px-5 py-2.5 rounded-xl shadow-lg group-hover:scale-105 transition-all flex-shrink-0">
+              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
+              Start Daily Mock
+            </div>
+          </div>
+        </button>
+      </div>
+
       {/* ── Feature Cards — Textbooks & One-Liners ───────────────────────── */}
       <div className="max-w-7xl mx-auto px-4 pb-12">
         <div className="mb-5">

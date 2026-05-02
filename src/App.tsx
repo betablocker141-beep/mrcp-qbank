@@ -12,12 +12,14 @@ import AuthView from './views/AuthView';
 import TextbookView from './views/TextbookView';
 import OneLinerView from './views/OneLinerView';
 import MockTestView from './views/MockTestView';
+import DailyMockView from './views/DailyMockView';
+import { saveDailyResult, getTodayUTC } from './dailyMockStore';
 import {
   HomeIcon, BookOpenIcon, BarChartIcon, SettingsIcon,
   LogOutIcon, ChevronDownIcon, ActivityIcon, LockIcon,
 } from './components/Icons';
 
-export type View = 'dashboard' | 'bank' | 'quiz' | 'results' | 'stats' | 'admin' | 'textbooks' | 'oneliners' | 'mock';
+export type View = 'dashboard' | 'bank' | 'quiz' | 'results' | 'stats' | 'admin' | 'textbooks' | 'oneliners' | 'mock' | 'daily-mock';
 
 function getInitials(name: string) {
   return name.split(' ').map((n) => n[0]).join('').toUpperCase().slice(0, 2);
@@ -53,6 +55,7 @@ function Navbar({
   const navItems: { label: string; view: View; icon: React.ReactNode }[] = [
     { label: 'Dashboard', view: 'dashboard', icon: <HomeIcon className="w-4 h-4" /> },
     { label: 'Question Bank', view: 'bank', icon: <BookOpenIcon className="w-4 h-4" /> },
+    { label: 'Daily Mock', view: 'daily-mock', icon: <span className="text-sm">🎯</span> },
     { label: 'Mock Tests', view: 'mock', icon: <span className="text-sm">🏆</span> },
     { label: 'Textbooks', view: 'textbooks', icon: <span className="text-sm">📚</span> },
     { label: 'Pearls', view: 'oneliners', icon: <span className="text-sm">💡</span> },
@@ -169,6 +172,10 @@ function Navbar({
                       className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-gray-700 hover:bg-blue-50 hover:text-blue-700 transition text-sm font-medium">
                       <BookOpenIcon className="w-4 h-4" /> Question Bank
                     </button>
+                    <button onClick={() => { setView('daily-mock'); setUserMenuOpen(false); }}
+                      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-gray-700 hover:bg-indigo-50 hover:text-indigo-700 transition text-sm font-medium">
+                      <span>🎯</span> Daily Mock Exam
+                    </button>
                     <button onClick={() => { setView('mock'); setUserMenuOpen(false); }}
                       className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-gray-700 hover:bg-amber-50 hover:text-amber-700 transition text-sm font-medium">
                       <span>🏆</span> Mock Tests
@@ -227,6 +234,8 @@ export function App() {
   const [isLoading, setIsLoading] = useState(() => getQuestions().length === 0);
   // Track which qbank the user navigated from (for QuestionBank source pre-filter)
   const [activeSource, setActiveSource] = useState<'All' | 'Passmedicine' | 'Pastest'>('All');
+  // Tracks whether the current quiz was started from Daily Mock (to save result on finish)
+  const [dailyMockPart, setDailyMockPart] = useState<MRCPPart | null>(null);
 
   const refreshQuestions = useCallback((showLoading = false) => {
     if (showLoading) setIsLoading(true);
@@ -255,10 +264,10 @@ export function App() {
   }
 
   const startQuiz = useCallback(
-    (questions: Question[], mode: 'tutor' | 'timed' | 'review') => {
+    (qs: Question[], mode: 'tutor' | 'timed' | 'review') => {
       const session: QuizSession = {
         id: generateId(),
-        questions,
+        questions: qs,
         answers: {},
         flagged: new Set<string>(),
         startTime: Date.now(),
@@ -273,11 +282,43 @@ export function App() {
     []
   );
 
+  const startDailyMock = useCallback(
+    (part: MRCPPart, dailyQuestions: Question[]) => {
+      setDailyMockPart(part);
+      startQuiz(dailyQuestions, 'timed');
+    },
+    [startQuiz]
+  );
+
   const handleFinishQuiz = useCallback((session: QuizSession) => {
     setCompletedSession(session);
     setActiveSession(null);
-    setView('results');
-  }, []);
+
+    // If this was a daily mock, save the result and go back to daily-mock
+    if (dailyMockPart && user) {
+      const correct = session.questions.filter(
+        (q) => session.answers[q.id] === q.correctAnswer
+      ).length;
+      const timeTaken = session.endTime
+        ? Math.floor((session.endTime - session.startTime) / 1000)
+        : 0;
+      saveDailyResult({
+        userId: user.id,
+        userName: user.name,
+        part: dailyMockPart,
+        date: getTodayUTC(),
+        score: correct,
+        total: session.questions.length,
+        percentage: Math.round((correct / session.questions.length) * 100),
+        timeTaken,
+        completedAt: new Date().toISOString(),
+      });
+      setDailyMockPart(null);
+      setView('daily-mock');
+    } else {
+      setView('results');
+    }
+  }, [dailyMockPart, user]);
 
   const handleReviewAnswers = useCallback(() => {
     if (!completedSession) return;
@@ -356,6 +397,15 @@ export function App() {
           onReview={handleReviewAnswers}
           onNewQuiz={() => setView('bank')}
           onDashboard={() => setView('dashboard')}
+        />
+      )}
+
+      {view === 'daily-mock' && (
+        <DailyMockView
+          questions={questions}
+          user={user}
+          onStart={startDailyMock}
+          isLoading={isLoading}
         />
       )}
 
