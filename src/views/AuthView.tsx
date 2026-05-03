@@ -54,7 +54,7 @@ export default function AuthView({ onAuth }: Props) {
         setTimeout(() => onAuth(user), 700);
       }
     } else {
-      const { user, error: err } = signIn(email, password);
+      const { user, error: err } = await signIn(email, password);
       if (err) { setError(err); setLoading(false); return; }
       if (user) onAuth(user);
     }
