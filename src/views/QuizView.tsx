@@ -768,37 +768,37 @@ export default function QuizView({ session: initSession, onFinish, onExit }: Qui
 
       {/* ── FIXED BOTTOM NAVIGATION BAR ─────────────────────────────── */}
       <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-lg z-20">
-        <div className="max-w-4xl mx-auto px-4 py-3 flex items-center justify-between gap-4">
+        <div className="max-w-4xl mx-auto px-3 py-2.5 flex items-center justify-between gap-2">
           <button onClick={() => setShowNavigator(true)}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg border-2 border-gray-300 text-gray-700 text-sm font-semibold hover:bg-gray-50 hover:border-gray-400 transition">
+            className="flex items-center gap-1.5 px-2.5 sm:px-4 py-2 rounded-lg border-2 border-gray-300 text-gray-700 text-sm font-semibold hover:bg-gray-50 hover:border-gray-400 transition shrink-0">
             <GridIcon className="w-4 h-4" />
-            <span>Navigator</span>
+            <span className="hidden sm:inline">Navigator</span>
           </button>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2">
             <button onClick={() => navigate(-1)} disabled={session.currentIndex === 0}
-              className="flex items-center gap-1.5 px-4 py-2 rounded-lg border-2 border-gray-300 text-gray-700 text-sm font-semibold hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition">
-              <ArrowLeftIcon className="w-4 h-4" /> Previous
+              className="flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-4 py-2 rounded-lg border-2 border-gray-300 text-gray-700 text-sm font-semibold hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition">
+              <ArrowLeftIcon className="w-4 h-4" /><span className="hidden sm:inline">Previous</span>
             </button>
-            <span className="text-sm font-bold text-gray-600 px-2 min-w-[60px] text-center">
+            <span className="text-sm font-bold text-gray-600 px-1 min-w-[52px] text-center whitespace-nowrap">
               {session.currentIndex + 1} / {total}
             </span>
             {session.currentIndex === total - 1 ? (
               <button onClick={handleFinish}
-                className="flex items-center gap-1.5 px-5 py-2 rounded-lg bg-green-600 text-white text-sm font-bold hover:bg-green-700 transition shadow-sm">
-                <CheckIcon className="w-4 h-4" /> Finish
+                className="flex items-center gap-1 sm:gap-1.5 px-3 sm:px-5 py-2 rounded-lg bg-green-600 text-white text-sm font-bold hover:bg-green-700 transition shadow-sm">
+                <CheckIcon className="w-4 h-4" /><span className="hidden sm:inline">Finish</span><span className="sm:hidden">Done</span>
               </button>
             ) : (
               <button onClick={() => navigate(1)}
-                className="flex items-center gap-1.5 px-5 py-2 rounded-lg bg-blue-600 text-white text-sm font-bold hover:bg-blue-700 transition shadow-sm">
-                Next <ArrowRightIcon className="w-4 h-4" />
+                className="flex items-center gap-1 sm:gap-1.5 px-3 sm:px-5 py-2 rounded-lg bg-blue-600 text-white text-sm font-bold hover:bg-blue-700 transition shadow-sm">
+                <span className="hidden sm:inline">Next</span><ArrowRightIcon className="w-4 h-4" />
               </button>
             )}
           </div>
 
           <button onClick={() => setConfirmExit(true)}
-            className="px-4 py-2 rounded-lg border-2 border-red-200 text-red-600 text-sm font-semibold hover:bg-red-50 hover:border-red-400 transition">
-            End Block
+            className="px-2.5 sm:px-4 py-2 rounded-lg border-2 border-red-200 text-red-600 text-sm font-semibold hover:bg-red-50 hover:border-red-400 transition shrink-0">
+            <span className="hidden sm:inline">End Block</span><span className="sm:hidden">End</span>
           </button>
         </div>
         <div className="h-1 bg-gray-100">

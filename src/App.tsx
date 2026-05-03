@@ -105,8 +105,8 @@ function Navbar({
             ))}
           </div>
 
-          {/* Nav Items */}
-          <div className="flex items-center gap-1 flex-1 justify-end">
+          {/* Nav Items — hidden on mobile, visible md+ */}
+          <div className="hidden md:flex items-center gap-1 flex-1 justify-end">
             {navItems.map((item) => {
               const locked = item.premium && !isSubscribed;
               return (
@@ -227,6 +227,60 @@ function Navbar({
       {userMenuOpen && (
         <div className="fixed inset-0 z-40" onClick={() => setUserMenuOpen(false)} />
       )}
+    </nav>
+  );
+}
+
+// ── Mobile bottom tab bar (shown only on small screens) ──────────────────────
+function MobileNavBar({
+  currentView, setView, isSubscribed, isAdmin,
+}: {
+  currentView: View;
+  setView: (v: View) => void;
+  isSubscribed: boolean;
+  isAdmin: boolean;
+}) {
+  const lock = <span className="text-[8px] opacity-60 absolute -top-0.5 -right-0.5">🔒</span>;
+
+  const items: { label: string; view: View; icon: React.ReactNode; premium?: boolean }[] = [
+    { label: 'Home',        view: 'dashboard',  icon: <HomeIcon className="w-5 h-5" />,     premium: true },
+    { label: 'Bank',        view: 'bank',        icon: <BookOpenIcon className="w-5 h-5" />, premium: true },
+    { label: 'Daily',       view: 'daily-mock',  icon: <span className="text-lg">🎯</span> },
+    { label: 'Mock',        view: 'mock',        icon: <span className="text-lg">🏆</span>,   premium: true },
+    { label: 'Stats',       view: 'stats',       icon: <BarChartIcon className="w-5 h-5" />, premium: true },
+  ];
+  if (isAdmin) {
+    items.push({ label: 'Admin', view: 'admin', icon: <SettingsIcon className="w-5 h-5" /> });
+  }
+
+  return (
+    <nav className="fixed bottom-0 left-0 right-0 z-50 bg-slate-900 border-t border-white/10 md:hidden safe-area-inset-bottom">
+      <div className="flex items-stretch justify-around">
+        {items.map((item) => {
+          const locked = item.premium && !isSubscribed;
+          const active = currentView === item.view;
+          return (
+            <button
+              key={item.view}
+              onClick={() => setView(item.view)}
+              className={`relative flex flex-col items-center justify-center gap-0.5 flex-1 py-2 text-[10px] font-semibold transition-all ${
+                active
+                  ? 'text-blue-400'
+                  : locked
+                  ? 'text-white/35'
+                  : 'text-white/55 hover:text-white/80'
+              }`}
+            >
+              <div className="relative">
+                {item.icon}
+                {locked && lock}
+              </div>
+              <span>{item.label}</span>
+              {active && <span className="absolute bottom-0 left-1/2 -translate-x-1/2 w-5 h-0.5 rounded-full bg-blue-400" />}
+            </button>
+          );
+        })}
+      </div>
     </nav>
   );
 }
@@ -364,6 +418,7 @@ export function App() {
   }, []);
 
   const isSubscribed = !!(user?.subscribed) || user?.role === 'admin';
+  const isAdmin = user?.role === 'admin';
 
   const navigateTo = (v: View) => {
     if (view === 'quiz') return;
@@ -379,7 +434,7 @@ export function App() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className={`min-h-screen bg-slate-50 ${view !== 'quiz' ? 'pb-14 md:pb-0' : ''}`}>
       {view !== 'quiz' && (
         <Navbar
           currentView={view}
@@ -388,6 +443,14 @@ export function App() {
           setActivePart={(p) => { setActivePart(p); setSelectedSystem('All Systems'); }}
           user={user}
           onLogout={handleLogout}
+        />
+      )}
+      {view !== 'quiz' && (
+        <MobileNavBar
+          currentView={view}
+          setView={navigateTo}
+          isSubscribed={isSubscribed}
+          isAdmin={isAdmin}
         />
       )}
 
