@@ -448,8 +448,8 @@ export default function Dashboard({
       {/* ── Overall Progress Bar ─────────────────────────────────────────── */}
       {stats.totalAttempted > 0 && (
         <div className="max-w-7xl mx-auto px-4 -mt-4 mb-2">
-          <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-4 flex items-center gap-4">
-            <div className="text-sm font-semibold text-gray-600 whitespace-nowrap">Overall Progress</div>
+          <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-4 flex items-center gap-3">
+            <div className="text-xs sm:text-sm font-semibold text-gray-600 whitespace-nowrap">Overall Progress</div>
             <div className="flex-1 bg-gray-100 rounded-full h-3 overflow-hidden">
               <div
                 className={`h-full rounded-full transition-all duration-700 ${
@@ -480,23 +480,23 @@ export default function Dashboard({
 
       {/* ── Systems Grid ─────────────────────────────────────────────────── */}
       <div className="max-w-7xl mx-auto px-4 py-8">
-        <div className="flex items-center justify-between mb-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-6">
           <div>
-            <h2 className="text-xl font-bold text-gray-900">
+            <h2 className="text-lg sm:text-xl font-bold text-gray-900">
               {cfg.label} — Browse by System
             </h2>
             <p className="text-gray-500 text-sm mt-0.5">Select a system to start practising</p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             {isLoading && (
-              <div className="flex items-center gap-2 text-sm text-blue-600 font-medium bg-blue-50 border border-blue-200 px-3 py-1.5 rounded-full">
+              <div className="flex items-center gap-2 text-xs sm:text-sm text-blue-600 font-medium bg-blue-50 border border-blue-200 px-3 py-1.5 rounded-full">
                 <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse inline-block" />
-                Loading questions…
+                Loading…
               </div>
             )}
             {!isLoading && (
-              <span className="text-sm text-gray-500 bg-gray-100 px-3 py-1.5 rounded-full font-medium border border-gray-200">
-                {activeSystems.length} systems · {activeQuestions.length.toLocaleString()} questions
+              <span className="text-xs sm:text-sm text-gray-500 bg-gray-100 px-3 py-1.5 rounded-full font-medium border border-gray-200">
+                {activeSystems.length} systems · {activeQuestions.length.toLocaleString()} Qs
               </span>
             )}
           </div>
@@ -531,7 +531,8 @@ export default function Dashboard({
             </button>
           </div>
           <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-            <table className="w-full text-sm">
+            <div className="overflow-x-auto">
+            <table className="w-full min-w-[400px] text-sm">
               <thead className="bg-gray-50 border-b border-gray-100">
                 <tr>
                   {['Date', 'System', 'Mode', 'Score', 'Accuracy'].map((h) => (
@@ -564,6 +565,7 @@ export default function Dashboard({
                 })}
               </tbody>
             </table>
+            </div>
           </div>
         </div>
       )}

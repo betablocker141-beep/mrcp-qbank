@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { getStats } from '../store';
 import { PART1_SYSTEMS, PART2_SYSTEMS, MRCPPart } from '../types';
 import RadarChart from '../components/RadarChart';
@@ -65,6 +65,20 @@ export default function StatsView({ activePart }: StatsViewProps) {
   const [activeTab, setActiveTab] = useState<StatsTab>(activePart);
   const stats = getStats();
   const studyTools = getStudyToolsStats();
+  const radarContainerRef = useRef<HTMLDivElement>(null);
+  const [radarSize, setRadarSize] = useState(380);
+
+  useEffect(() => {
+    const update = () => {
+      if (radarContainerRef.current) {
+        const w = radarContainerRef.current.offsetWidth;
+        setRadarSize(Math.min(380, Math.max(260, w - 32)));
+      }
+    };
+    update();
+    window.addEventListener('resize', update);
+    return () => window.removeEventListener('resize', update);
+  }, []);
 
   // Keep tab in sync when activePart prop changes
   useEffect(() => {
@@ -159,17 +173,17 @@ export default function StatsView({ activePart }: StatsViewProps) {
         </div>
 
         {/* ── Study Tools Stats ──────────────────────────────────── */}
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-3 gap-2 sm:gap-4">
           {[
-            { icon: <BookmarkIcon className="w-7 h-7" />, label: 'Bookmarks',  value: studyTools.bookmarksCount,  color: 'bg-indigo-50 border-indigo-200 text-indigo-700' },
-            { icon: <PencilIcon className="w-7 h-7" />,   label: 'Notes',      value: studyTools.notesCount,       color: 'bg-amber-50 border-amber-200 text-amber-700' },
-            { icon: <ActivityIcon className="w-7 h-7" />, label: 'Highlights', value: studyTools.highlightsCount,  color: 'bg-yellow-50 border-yellow-200 text-yellow-700' },
+            { icon: <BookmarkIcon className="w-5 h-5 sm:w-7 sm:h-7" />, label: 'Bookmarks',  value: studyTools.bookmarksCount,  color: 'bg-indigo-50 border-indigo-200 text-indigo-700' },
+            { icon: <PencilIcon className="w-5 h-5 sm:w-7 sm:h-7" />,   label: 'Notes',      value: studyTools.notesCount,       color: 'bg-amber-50 border-amber-200 text-amber-700' },
+            { icon: <ActivityIcon className="w-5 h-5 sm:w-7 sm:h-7" />, label: 'Highlights', value: studyTools.highlightsCount,  color: 'bg-yellow-50 border-yellow-200 text-yellow-700' },
           ].map((s) => (
-            <div key={s.label} className={`rounded-2xl border p-4 ${s.color} flex items-center gap-4`}>
-              <div className="opacity-70">{s.icon}</div>
+            <div key={s.label} className={`rounded-2xl border p-3 sm:p-4 ${s.color} flex items-center gap-2 sm:gap-4`}>
+              <div className="opacity-70 hidden sm:block">{s.icon}</div>
               <div>
-                <div className="text-2xl font-extrabold">{s.value}</div>
-                <div className="text-sm font-medium opacity-75">{s.label}</div>
+                <div className="text-xl sm:text-2xl font-extrabold">{s.value}</div>
+                <div className="text-xs sm:text-sm font-medium opacity-75">{s.label}</div>
               </div>
             </div>
           ))}
@@ -196,8 +210,8 @@ export default function StatsView({ activePart }: StatsViewProps) {
             </div>
 
             {radarData.length >= 3 ? (
-              <div className="flex justify-center">
-                <RadarChart data={radarData} size={420} />
+              <div ref={radarContainerRef} className="flex justify-center">
+                <RadarChart data={radarData} size={radarSize} />
               </div>
             ) : (
               <div className="text-center py-16 bg-gray-50 rounded-2xl border border-dashed border-gray-200">
@@ -301,19 +315,19 @@ export default function StatsView({ activePart }: StatsViewProps) {
                 const pct = data.attempted > 0 ? Math.round((data.correct / data.attempted) * 100) : 0;
                 const barColor = pct >= 70 ? 'bg-green-500' : pct >= 50 ? 'bg-amber-400' : 'bg-red-400';
                 return (
-                  <div key={sys} className="flex items-center gap-4">
-                    <div className="w-40 text-sm text-gray-700 font-medium flex-shrink-0 truncate">{sys}</div>
+                  <div key={sys} className="flex items-center gap-2 sm:gap-4">
+                    <div className="w-24 sm:w-40 text-sm text-gray-700 font-medium flex-shrink-0 truncate">{sys}</div>
                     <div className="flex-1 bg-gray-100 rounded-full h-3 overflow-hidden">
                       <div className={`h-full ${barColor} rounded-full transition-all`}
                         style={{ width: data.attempted > 0 ? `${pct}%` : '0%' }} />
                     </div>
-                    <div className="w-36 text-right text-sm">
+                    <div className="w-16 sm:w-36 text-right text-sm flex-shrink-0">
                       {data.attempted > 0 ? (
                         <span className={`font-bold ${pct >= 70 ? 'text-green-600' : pct >= 50 ? 'text-amber-500' : 'text-red-500'}`}>
-                          {data.correct}/{data.attempted} ({pct}%)
+                          <span className="hidden sm:inline">{data.correct}/{data.attempted} </span>({pct}%)
                         </span>
                       ) : (
-                        <span className="text-gray-400 text-xs">Not started</span>
+                        <span className="text-gray-400 text-xs">—</span>
                       )}
                     </div>
                   </div>
@@ -331,8 +345,8 @@ export default function StatsView({ activePart }: StatsViewProps) {
               <h2 className="font-bold text-gray-800 text-lg">{cfg.label} Session History</h2>
               <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-medium ml-auto">{partHistory.length} sessions</span>
             </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+            <div className="overflow-x-auto -mx-0">
+              <table className="w-full min-w-[560px] text-sm">
                 <thead className="bg-gray-50 border-b border-gray-200">
                   <tr>
                     {['Date', 'System', 'Mode', 'Source', 'Score', 'Accuracy', 'Status'].map((h) => (
