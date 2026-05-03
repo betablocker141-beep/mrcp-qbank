@@ -35,9 +35,15 @@ export default function UserManagement() {
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [toast, setToast] = useState('');
   const [loadingSub, setLoadingSub] = useState<string | null>(null);
-  const [resetTarget, setResetTarget] = useState<string | null>(null); // email
+  const [resetTarget, setResetTarget] = useState<string | null>(null); // email (table row)
   const [resetPass, setResetPass] = useState('');
   const [resetLoading, setResetLoading] = useState(false);
+  // Reset password by email (for users not in table)
+  const [resetByEmail, setResetByEmail] = useState('');
+  const [resetByPass, setResetByPass] = useState('');
+  const [showResetByPass, setShowResetByPass] = useState(false);
+  const [resetByLoading, setResetByLoading] = useState(false);
+  const [resetByError, setResetByError] = useState('');
   // Manual grant by email
   const [grantEmail, setGrantEmail] = useState('');
   const [grantLoading, setGrantLoading] = useState(false);
@@ -105,6 +111,26 @@ export default function UserManagement() {
     setResetTarget(null);
     setResetPass('');
     showToast(`Password reset for ${resetTarget} ✓`);
+  };
+
+  const handleResetByEmail = async () => {
+    const email = resetByEmail.trim().toLowerCase();
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setResetByError('Please enter a valid email address.');
+      return;
+    }
+    if (resetByPass.length < 6) {
+      setResetByError('Password must be at least 6 characters.');
+      return;
+    }
+    setResetByError('');
+    setResetByLoading(true);
+    const { ok, error } = await adminResetPassword(email, resetByPass);
+    setResetByLoading(false);
+    if (!ok) { setResetByError(error ?? 'Could not reset — make sure the account exists first.'); return; }
+    setResetByEmail('');
+    setResetByPass('');
+    showToast(`Password reset for ${email} ✓`);
   };
 
   const handleGrantByEmail = async () => {
@@ -224,6 +250,53 @@ export default function UserManagement() {
             : '👤'}
           Create Account &amp; Grant Access
         </button>
+      </div>
+
+      {/* ── Reset Password by Email ── */}
+      <div className="bg-white border-2 border-orange-200 rounded-2xl p-5 shadow-sm">
+        <div className="flex items-center gap-2 mb-3">
+          <span className="text-xl">🔑</span>
+          <div>
+            <h3 className="font-bold text-gray-800 text-sm">Reset Password by Email</h3>
+            <p className="text-xs text-gray-500 mt-0.5">
+              Update the password for any existing account — works even if the student isn't listed in the table below.
+            </p>
+          </div>
+        </div>
+        <div className="flex gap-2 items-start flex-wrap">
+          <input
+            type="email"
+            value={resetByEmail}
+            onChange={(e) => { setResetByEmail(e.target.value); setResetByError(''); }}
+            placeholder="student@email.com"
+            className="flex-1 min-w-[180px] px-4 py-2.5 border-2 border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-300 bg-gray-50"
+          />
+          <div className="relative flex-1 min-w-[180px]">
+            <input
+              type={showResetByPass ? 'text' : 'password'}
+              value={resetByPass}
+              onChange={(e) => { setResetByPass(e.target.value); setResetByError(''); }}
+              onKeyDown={(e) => e.key === 'Enter' && handleResetByEmail()}
+              placeholder="New password"
+              className="w-full px-4 py-2.5 pr-10 border-2 border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-300 bg-gray-50"
+            />
+            <button type="button" onClick={() => setShowResetByPass(v => !v)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-xs">
+              {showResetByPass ? '🙈' : '👁️'}
+            </button>
+          </div>
+          <button
+            onClick={handleResetByEmail}
+            disabled={resetByLoading || !resetByEmail.trim() || resetByPass.length < 6}
+            className="flex items-center gap-2 px-5 py-2.5 bg-orange-500 text-white rounded-xl text-sm font-bold hover:bg-orange-600 transition disabled:opacity-50 disabled:cursor-not-allowed shadow-sm whitespace-nowrap"
+          >
+            {resetByLoading
+              ? <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+              : '🔑'}
+            Reset Password
+          </button>
+        </div>
+        {resetByError && <p className="text-xs text-red-600 mt-2">{resetByError}</p>}
       </div>
 
       {/* ── Grant Access by Email ── */}
