@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { OneLiner, OneLinerSource, SYSTEMS, SYSTEM_ICONS } from '../types';
-import { getOneLiners } from '../oneLinerStore';
+import { getOneLiners, syncOneLinersFromSupabase } from '../oneLinerStore';
 
 // ── Icons ─────────────────────────────────────────────────────────────────────
 const SearchIcon = ({ className = 'w-4 h-4' }) => (
@@ -492,8 +492,14 @@ export default function OneLinerView() {
   const [systemFilter, setSystemFilter] = useState<string>('All');
   const [search, setSearch] = useState('');
   const [viewMode, setViewMode] = useState<'flashcard' | 'list'>('list');
+  const [allLiners, setAllLiners] = useState<OneLiner[]>(() => getOneLiners());
 
-  const allLiners = getOneLiners();
+  // Sync from Supabase when the view is opened (covers the case where localStorage is empty on mobile)
+  useEffect(() => {
+    syncOneLinersFromSupabase()
+      .then((liners) => setAllLiners(liners))
+      .catch(() => setAllLiners(getOneLiners()));
+  }, []);
   const srcCfg = SOURCE_CONFIG[source];
 
   const filtered = useMemo(() => {

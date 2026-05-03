@@ -16,6 +16,7 @@ import DailyMockView from './views/DailyMockView';
 import UpgradeView from './views/UpgradeView';
 import { saveDailyResult, getTodayUTC } from './dailyMockStore';
 import { checkSubscription } from './authStore';
+import { syncOneLinersFromSupabase } from './oneLinerStore';
 import {
   HomeIcon, BookOpenIcon, BarChartIcon, SettingsIcon,
   LogOutIcon, ChevronDownIcon, ActivityIcon, LockIcon,
@@ -315,6 +316,8 @@ export function App() {
 
   useEffect(() => {
     refreshQuestions(getQuestions().length === 0);
+    // Sync one-liners from Supabase in the background so all devices see the same data
+    syncOneLinersFromSupabase().catch(() => { /* fallback to localStorage */ });
   }, []);
 
   // Check subscription status from Supabase on every login

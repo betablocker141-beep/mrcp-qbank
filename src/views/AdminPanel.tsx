@@ -26,6 +26,7 @@ import {
 } from '../textbookStore';
 import {
   getOneLiners, bulkAddOneLiners, deleteOneLiner, clearOneLiners,
+  pushOneLinersToSupabase, clearOneLinersInSupabase,
 } from '../oneLinerStore';
 
 const EMPTY_Q: Omit<Question, 'id'> = {
@@ -371,7 +372,9 @@ export default function AdminPanel({ onDataChange }: { onDataChange?: () => void
   };
 
   // ── One-liner handlers ────────────────────────────────────────────────────
-  const handleOneLinerImport = () => {
+  const [olSyncing, setOlSyncing] = useState(false);
+
+  const handleOneLinerImport = async () => {
     setOlMsg(''); setOlError('');
     if (!olJson.trim()) { setOlError('❌ JSON input is empty.'); return; }
     let parsed: any;
@@ -400,9 +403,33 @@ export default function AdminPanel({ onDataChange }: { onDataChange?: () => void
     });
     if (errors.length > 0) { setOlError('❌ Validation Errors:\n' + errors.join('\n')); return; }
     const result = bulkAddOneLiners(validated);
-    setLiners(getOneLiners());
+    const all = getOneLiners();
+    setLiners(all);
     setOlJson('');
-    setOlMsg(`✅ ${result.added} new · ${result.updated} updated · ${getOneLiners().length} total in database.`);
+    setOlMsg(`✅ Saved to local: ${result.added} new · ${result.updated} updated. Syncing to Supabase…`);
+    // Push to Supabase so all devices can see the data
+    setOlSyncing(true);
+    const push = await pushOneLinersToSupabase(validated);
+    setOlSyncing(false);
+    if (push.ok) {
+      setOlMsg(`✅ ${result.added} new · ${result.updated} updated · ${all.length} total — synced to Supabase ✓`);
+    } else {
+      setOlMsg(`⚠️ Saved locally (${all.length} total) but Supabase sync failed: ${push.error}. Run "Push all to Supabase" manually.`);
+    }
+  };
+
+  const handlePushAllToSupabase = async () => {
+    setOlSyncing(true);
+    setOlMsg('Pushing all one-liners to Supabase…');
+    const all = getOneLiners();
+    const push = await pushOneLinersToSupabase(all);
+    setOlSyncing(false);
+    if (push.ok) {
+      setOlMsg(`✅ Successfully pushed ${all.length} one-liners to Supabase. All devices will now see them.`);
+    } else {
+      setOlError(`❌ Supabase push failed: ${push.error}`);
+      setOlMsg('');
+    }
   };
 
   const tabs: { id: AdminTab; label: string; icon: string }[] = [
@@ -1109,10 +1136,10 @@ export default function AdminPanel({ onDataChange }: { onDataChange?: () => void
               {olError && <div className="mb-4 p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-sm"><pre className="whitespace-pre-wrap text-xs">{olError}</pre></div>}
               {olMsg && <div className="mb-4 p-3 rounded-xl bg-green-50 border border-green-200 text-green-700 text-sm font-semibold">{olMsg}</div>}
 
-              <div className="flex gap-3">
-                <button onClick={handleOneLinerImport}
-                  className={`${olSource === 'Passmedicine' ? 'bg-violet-600 hover:bg-violet-700' : 'bg-teal-600 hover:bg-teal-700'} text-white px-6 py-3 rounded-xl font-bold transition shadow`}>
-                  {olSource === 'Passmedicine' ? '🟣' : '🟢'} Import {olSource} One-Liners
+              <div className="flex flex-wrap gap-3">
+                <button onClick={handleOneLinerImport} disabled={olSyncing}
+                  className={`${olSource === 'Passmedicine' ? 'bg-violet-600 hover:bg-violet-700' : 'bg-teal-600 hover:bg-teal-700'} text-white px-6 py-3 rounded-xl font-bold transition shadow disabled:opacity-60`}>
+                  {olSyncing ? '⏳ Syncing…' : `${olSource === 'Passmedicine' ? '🟣' : '🟢'} Import ${olSource} One-Liners`}
                 </button>
                 <button onClick={() => { setOlJson(''); setOlMsg(''); setOlError(''); }}
                   className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-6 py-3 rounded-xl font-semibold transition">Clear</button>
@@ -1121,7 +1148,19 @@ export default function AdminPanel({ onDataChange }: { onDataChange?: () => void
 
             {/* Summary & Clear */}
             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-              <h3 className="font-bold text-gray-800 text-lg mb-4">One-Liner Database ({liners.length} total)</h3>
+              <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
+                <h3 className="font-bold text-gray-800 text-lg">One-Liner Database ({liners.length} total)</h3>
+                <button
+                  onClick={handlePushAllToSupabase}
+                  disabled={olSyncing || liners.length === 0}
+                  className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white px-4 py-2.5 rounded-xl font-bold text-sm transition shadow"
+                >
+                  {olSyncing ? '⏳ Pushing…' : '☁️ Push all to Supabase'}
+                </button>
+              </div>
+              <div className="mb-3 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-xl p-3">
+                ⚠️ If one-liners show on desktop but not on mobile, click <strong>"Push all to Supabase"</strong> once to sync all {liners.length} pearls to the cloud.
+              </div>
               <div className="grid grid-cols-2 gap-4 mb-5">
                 {(['Passmedicine', 'Pastest'] as OneLinerSource[]).map((s) => {
                   const count = liners.filter(l => l.source === s).length;
