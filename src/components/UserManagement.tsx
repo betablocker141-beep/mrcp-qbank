@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import {
   getAllUsers, deleteUser, updateUserRole,
-  getAllSubscriptions, setSubscription, getSession,
+  getAllSubscriptions, setSubscription, getSession, adminCreateAccount,
 } from '../authStore';
 import { User, UserRole } from '../types';
 
@@ -38,6 +38,13 @@ export default function UserManagement() {
   const [grantEmail, setGrantEmail] = useState('');
   const [grantLoading, setGrantLoading] = useState(false);
   const [grantError, setGrantError] = useState('');
+  // Create account
+  const [createName, setCreateName] = useState('');
+  const [createEmail, setCreateEmail] = useState('');
+  const [createPass, setCreatePass] = useState('');
+  const [showPass, setShowPass] = useState(false);
+  const [createLoading, setCreateLoading] = useState(false);
+  const [createError, setCreateError] = useState('');
   const currentUser = getSession();
 
   const reload = async () => {
@@ -70,6 +77,19 @@ export default function UserManagement() {
     await reload();
     setLoadingSub(null);
     showToast(`${user.name}: subscription ${!current ? 'activated ✓' : 'revoked'}`);
+  };
+
+  const handleCreateAccount = async () => {
+    setCreateError('');
+    setCreateLoading(true);
+    const { ok, error } = await adminCreateAccount(
+      createName, createEmail, createPass, currentUser?.name ?? 'admin',
+    );
+    setCreateLoading(false);
+    if (!ok) { setCreateError(error ?? 'Something went wrong.'); return; }
+    setCreateName(''); setCreateEmail(''); setCreatePass('');
+    await reload();
+    showToast(`Account created for ${createEmail} — subscribed ✓`);
   };
 
   const handleGrantByEmail = async () => {
@@ -132,6 +152,63 @@ export default function UserManagement() {
             </div>
           </div>
         ))}
+      </div>
+
+      {/* ── Create Account for Student ── */}
+      <div className="bg-white border-2 border-blue-200 rounded-2xl p-5 shadow-sm">
+        <div className="flex items-center gap-2 mb-4">
+          <span className="text-xl">👤</span>
+          <div>
+            <h3 className="font-bold text-gray-800 text-sm">Create Account for Student</h3>
+            <p className="text-xs text-gray-500 mt-0.5">
+              Creates a Supabase-backed account — student can log in from any device with these credentials.
+              Subscription is granted automatically.
+            </p>
+          </div>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-3">
+          <input
+            type="text"
+            value={createName}
+            onChange={(e) => { setCreateName(e.target.value); setCreateError(''); }}
+            placeholder="Full name"
+            className="px-4 py-2.5 border-2 border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-300 bg-gray-50"
+          />
+          <input
+            type="email"
+            value={createEmail}
+            onChange={(e) => { setCreateEmail(e.target.value); setCreateError(''); }}
+            placeholder="Email address"
+            className="px-4 py-2.5 border-2 border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-300 bg-gray-50"
+          />
+          <div className="relative">
+            <input
+              type={showPass ? 'text' : 'password'}
+              value={createPass}
+              onChange={(e) => { setCreatePass(e.target.value); setCreateError(''); }}
+              placeholder="Set password"
+              className="w-full px-4 py-2.5 pr-10 border-2 border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-300 bg-gray-50"
+            />
+            <button
+              type="button"
+              onClick={() => setShowPass((v) => !v)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-xs"
+            >
+              {showPass ? '🙈' : '👁️'}
+            </button>
+          </div>
+        </div>
+        {createError && <p className="text-xs text-red-600 mb-2">{createError}</p>}
+        <button
+          onClick={handleCreateAccount}
+          disabled={createLoading || !createName.trim() || !createEmail.trim() || !createPass}
+          className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-bold hover:bg-blue-700 transition disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+        >
+          {createLoading
+            ? <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+            : '👤'}
+          Create Account &amp; Grant Access
+        </button>
       </div>
 
       {/* ── Grant Access by Email ── */}
