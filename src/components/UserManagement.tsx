@@ -34,6 +34,10 @@ export default function UserManagement() {
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [toast, setToast] = useState('');
   const [loadingSub, setLoadingSub] = useState<string | null>(null);
+  // Manual grant by email
+  const [grantEmail, setGrantEmail] = useState('');
+  const [grantLoading, setGrantLoading] = useState(false);
+  const [grantError, setGrantError] = useState('');
   const currentUser = getSession();
 
   const reload = async () => {
@@ -66,6 +70,21 @@ export default function UserManagement() {
     await reload();
     setLoadingSub(null);
     showToast(`${user.name}: subscription ${!current ? 'activated ✓' : 'revoked'}`);
+  };
+
+  const handleGrantByEmail = async () => {
+    const email = grantEmail.trim().toLowerCase();
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setGrantError('Please enter a valid email address.');
+      return;
+    }
+    setGrantError('');
+    setGrantLoading(true);
+    await setSubscription(email, true, currentUser?.name ?? 'admin');
+    await reload();
+    setGrantLoading(false);
+    setGrantEmail('');
+    showToast(`Access granted to ${email} ✓`);
   };
 
   const handleDelete = (id: string) => {
@@ -115,14 +134,53 @@ export default function UserManagement() {
         ))}
       </div>
 
+      {/* ── Grant Access by Email ── */}
+      <div className="bg-white border-2 border-emerald-200 rounded-2xl p-5 shadow-sm">
+        <div className="flex items-center gap-2 mb-3">
+          <span className="text-xl">✅</span>
+          <div>
+            <h3 className="font-bold text-gray-800 text-sm">Grant Access by Email</h3>
+            <p className="text-xs text-gray-500 mt-0.5">
+              Enter the student's registered email to activate their subscription — works even if they don't appear in the list below.
+            </p>
+          </div>
+        </div>
+        <div className="flex gap-2 items-start">
+          <div className="flex-1">
+            <input
+              type="email"
+              value={grantEmail}
+              onChange={(e) => { setGrantEmail(e.target.value); setGrantError(''); }}
+              onKeyDown={(e) => e.key === 'Enter' && handleGrantByEmail()}
+              placeholder="student@email.com"
+              className={`w-full px-4 py-2.5 border-2 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-300 transition ${
+                grantError ? 'border-red-300 bg-red-50' : 'border-gray-200 bg-gray-50'
+              }`}
+            />
+            {grantError && <p className="text-xs text-red-600 mt-1">{grantError}</p>}
+          </div>
+          <button
+            onClick={handleGrantByEmail}
+            disabled={grantLoading || !grantEmail.trim()}
+            className="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 text-white rounded-xl text-sm font-bold hover:bg-emerald-700 transition disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap shadow-sm"
+          >
+            {grantLoading
+              ? <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+              : '✅'}
+            Grant Access
+          </button>
+        </div>
+      </div>
+
       {/* Info banner */}
       <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-2xl p-4 flex items-start gap-3">
         <span className="text-2xl">💳</span>
         <div>
           <div className="font-bold text-blue-800 text-sm">Manual Subscription Activation</div>
           <div className="text-blue-600 text-xs mt-0.5">
-            Students pay <strong>$30 USD</strong> to <strong>salvahardin492@gmail.com</strong>, then you activate them here.
-            Use the <strong>✅ Subscribe</strong> button to grant access, or <strong>🔒 Revoke</strong> to remove it.
+            Students pay <strong>$30 USD</strong> to <strong>salvahardin492@gmail.com</strong>, then use the
+            {' '}<strong>Grant Access by Email</strong> box above or the <strong>✅ Subscribe</strong> button in the table.
+            Note: the table only shows users from this browser — use the email box for anyone not listed.
           </div>
         </div>
       </div>
