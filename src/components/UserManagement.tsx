@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import {
   getAllUsers, deleteUser, updateUserRole,
-  getAllSubscriptions, setSubscription, getSession, adminCreateAccount,
+  getAllSubscriptions, setSubscription, getSession,
+  adminCreateAccount, adminResetPassword,
 } from '../authStore';
 import { User, UserRole } from '../types';
 
@@ -34,6 +35,9 @@ export default function UserManagement() {
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [toast, setToast] = useState('');
   const [loadingSub, setLoadingSub] = useState<string | null>(null);
+  const [resetTarget, setResetTarget] = useState<string | null>(null); // email
+  const [resetPass, setResetPass] = useState('');
+  const [resetLoading, setResetLoading] = useState(false);
   // Manual grant by email
   const [grantEmail, setGrantEmail] = useState('');
   const [grantLoading, setGrantLoading] = useState(false);
@@ -90,6 +94,17 @@ export default function UserManagement() {
     setCreateName(''); setCreateEmail(''); setCreatePass('');
     await reload();
     showToast(`Account created for ${createEmail} — subscribed ✓`);
+  };
+
+  const handleResetPassword = async () => {
+    if (!resetTarget || resetPass.length < 6) return;
+    setResetLoading(true);
+    const { ok, error } = await adminResetPassword(resetTarget, resetPass);
+    setResetLoading(false);
+    if (!ok) { showToast(`Error: ${error}`); return; }
+    setResetTarget(null);
+    setResetPass('');
+    showToast(`Password reset for ${resetTarget} ✓`);
   };
 
   const handleGrantByEmail = async () => {
@@ -357,6 +372,37 @@ export default function UserManagement() {
 
                     <td className="px-5 py-4">
                       <div className="flex items-center justify-end gap-2 flex-wrap">
+                        {/* Reset password */}
+                        {!isSelf && !isDefaultAdmin && (
+                          resetTarget === user.email ? (
+                            <div className="flex items-center gap-1">
+                              <input
+                                type="text"
+                                value={resetPass}
+                                onChange={(e) => setResetPass(e.target.value)}
+                                placeholder="New password"
+                                className="border border-gray-300 rounded-lg px-2 py-1 text-xs w-28 focus:outline-none focus:ring-1 focus:ring-blue-400"
+                                autoFocus
+                              />
+                              <button
+                                onClick={handleResetPassword}
+                                disabled={resetLoading || resetPass.length < 6}
+                                className="px-2 py-1 bg-blue-600 text-white rounded-lg text-xs font-bold hover:bg-blue-700 disabled:opacity-50 transition"
+                              >
+                                {resetLoading ? '…' : '✓'}
+                              </button>
+                              <button onClick={() => { setResetTarget(null); setResetPass(''); }} className="px-2 py-1 bg-gray-200 text-gray-700 rounded-lg text-xs">✕</button>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => { setResetTarget(user.email); setResetPass(''); }}
+                              className="px-3 py-1.5 rounded-xl text-xs font-bold bg-blue-50 text-blue-600 hover:bg-blue-100 border border-blue-200 transition"
+                            >
+                              🔑 Reset PW
+                            </button>
+                          )
+                        )}
+
                         {!isAdmin && !isSelf && (
                           <button
                             onClick={() => handleToggleSub(user)}
