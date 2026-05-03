@@ -87,7 +87,11 @@ export async function syncOneLinersFromSupabase(): Promise<OneLiner[]> {
 /** Upsert a batch of one-liners into Supabase (used by AdminPanel after import). */
 export async function pushOneLinersToSupabase(liners: OneLiner[]): Promise<{ ok: boolean; error?: string }> {
   try {
-    const rows = liners.map(oneLinerToRow);
+    // Deduplicate by id — keep the last occurrence to avoid ON CONFLICT errors
+    const seen = new Map<string, OneLiner>();
+    for (const l of liners) seen.set(l.id, l);
+    const rows = [...seen.values()].map(oneLinerToRow);
+
     // Upsert in chunks of 500 to avoid request size limits
     const chunkSize = 500;
     for (let i = 0; i < rows.length; i += chunkSize) {
