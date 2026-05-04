@@ -4,9 +4,20 @@ import { supabase } from './lib/supabase';
 const KEY = 'mrcp_oneliners';
 const PAGE_SIZE = 1000;
 
+// In-memory session cache — prevents multiple Supabase fetches per session
+// and stops the count from flickering on re-renders.
+let _cache: OneLiner[] | null = null;
+let _fetchPromise: Promise<OneLiner[]> | null = null;
+
+export function invalidateOneLinerCache(): void {
+  _cache = null;
+  _fetchPromise = null;
+}
+
 // ── Core helpers ──────────────────────────────────────────────────────────────
 
 export function getOneLiners(): OneLiner[] {
+  if (_cache !== null) return _cache;
   try {
     return JSON.parse(localStorage.getItem(KEY) ?? '[]') as OneLiner[];
   } catch {
@@ -15,9 +26,12 @@ export function getOneLiners(): OneLiner[] {
 }
 
 function persist(liners: OneLiner[]): void {
+  _cache = liners;
   try {
     localStorage.setItem(KEY, JSON.stringify(liners));
-  } catch { /* quota */ }
+  } catch {
+    // localStorage quota exceeded — Supabase is the source of truth, keep in memory only
+  }
 }
 
 // ── Supabase sync ─────────────────────────────────────────────────────────────
@@ -48,51 +62,77 @@ function oneLinerToRow(l: OneLiner) {
   };
 }
 
-/** Fetch all one-liners from Supabase, cache in localStorage, return them. */
+/**
+ * Fetch all one-liners from Supabase and MERGE with localStorage.
+ * Merge rule: union by id — Supabase wins on conflicts, but local-only
+ * entries are preserved. This means a pearl you imported locally but
+ * whose Supabase push failed will never be silently wiped on the next sync.
+ *
+ * Returns the session cache immediately on subsequent calls.
+ */
 export async function syncOneLinersFromSupabase(): Promise<OneLiner[]> {
-  try {
-    const allRows: any[] = [];
-    let from = 0;
-    let hasMore = true;
+  if (_cache !== null) return _cache;
+  if (_fetchPromise) return _fetchPromise;
 
-    while (hasMore) {
-      const { data, error } = await supabase
-        .from('one_liners')
-        .select('*')
-        .order('id', { ascending: true })
-        .range(from, from + PAGE_SIZE - 1);
+  _fetchPromise = (async () => {
+    try {
+      const allRows: any[] = [];
+      let from = 0;
 
-      if (error) throw error;
+      while (true) {
+        const { data, error } = await supabase
+          .from('one_liners')
+          .select('*')
+          .order('id', { ascending: true })
+          .range(from, from + PAGE_SIZE - 1);
 
-      if (data && data.length > 0) {
+        if (error) throw error;
+        if (!data || data.length === 0) break;
         allRows.push(...data);
+        if (data.length < PAGE_SIZE) break;
         from += PAGE_SIZE;
-        hasMore = data.length === PAGE_SIZE;
-      } else {
-        hasMore = false;
       }
-    }
 
-    if (allRows.length > 0) {
-      const liners = allRows.map(rowToOneLiner);
-      persist(liners);
-      return liners;
+      const fromSupabase = allRows.map(rowToOneLiner);
+
+      // Merge: start with local entries, then overwrite/add Supabase entries by id.
+      // This preserves any local-only pearls that weren't pushed yet.
+      const local = (() => {
+        try { return JSON.parse(localStorage.getItem(KEY) ?? '[]') as OneLiner[]; }
+        catch { return [] as OneLiner[]; }
+      })();
+
+      const merged = new Map<string, OneLiner>();
+      for (const l of local) merged.set(l.id, l);         // local first
+      for (const l of fromSupabase) merged.set(l.id, l);  // Supabase wins on conflict
+
+      const result = [...merged.values()];
+      persist(result);
+      return result;
+    } catch (err) {
+      console.warn('[oneLinerStore] Supabase sync failed, using localStorage:', err);
+      const local = getOneLiners();
+      _cache = local;
+      return local;
+    } finally {
+      _fetchPromise = null;
     }
-  } catch (err) {
-    console.warn('[oneLinerStore] Supabase sync failed, using localStorage:', err);
-  }
-  return getOneLiners();
+  })();
+
+  return _fetchPromise;
 }
 
-/** Upsert a batch of one-liners into Supabase (used by AdminPanel after import). */
+/**
+ * Upsert a batch of one-liners into Supabase.
+ * Handles any number of entries by chunking into batches of 500.
+ */
 export async function pushOneLinersToSupabase(liners: OneLiner[]): Promise<{ ok: boolean; error?: string }> {
   try {
-    // Deduplicate by id — keep the last occurrence to avoid ON CONFLICT errors
+    // Deduplicate by id
     const seen = new Map<string, OneLiner>();
     for (const l of liners) seen.set(l.id, l);
     const rows = [...seen.values()].map(oneLinerToRow);
 
-    // Upsert in chunks of 500 to avoid request size limits
     const chunkSize = 500;
     for (let i = 0; i < rows.length; i += chunkSize) {
       const chunk = rows.slice(i, i + chunkSize);
@@ -112,11 +152,12 @@ export async function clearOneLinersInSupabase(source?: OneLinerSource): Promise
     if (source) {
       await query.eq('source', source);
     } else {
-      await query.neq('id', ''); // delete all
+      await query.neq('id', '');
     }
   } catch (err) {
     console.warn('[oneLinerStore] Supabase clear failed:', err);
   }
+  invalidateOneLinerCache();
 }
 
 /** Delete one-liners matching source + optional part + optional system from both localStorage and Supabase. */
@@ -125,7 +166,6 @@ export async function deleteOneLinersByFilter(
   part?: OneLiner['part'],
   system?: string,
 ): Promise<{ removed: number; error?: string }> {
-  // Remove from localStorage
   const before = getOneLiners();
   const kept = before.filter((l) => {
     if (l.source !== source) return true;
@@ -136,7 +176,6 @@ export async function deleteOneLinersByFilter(
   persist(kept);
   const removed = before.length - kept.length;
 
-  // Remove from Supabase
   try {
     let query = supabase.from('one_liners').delete().eq('source', source);
     if (part) query = (query as any).eq('part', part);
@@ -147,10 +186,11 @@ export async function deleteOneLinersByFilter(
     return { removed, error: err.message ?? String(err) };
   }
 
+  invalidateOneLinerCache();
   return { removed };
 }
 
-// ── CRUD (localStorage) ───────────────────────────────────────────────────────
+// ── CRUD (localStorage + cache) ───────────────────────────────────────────────
 
 export function addOneLiner(liner: OneLiner): void {
   const list = getOneLiners();
@@ -187,6 +227,7 @@ export function deleteOneLiner(id: string): void {
 
 export function clearOneLiners(source?: OneLinerSource): void {
   if (!source) {
+    _cache = null;
     localStorage.removeItem(KEY);
     return;
   }
