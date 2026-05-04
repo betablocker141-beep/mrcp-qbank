@@ -38,7 +38,7 @@ export async function syncFromSupabase(): Promise<Question[]> {
         const { data, error } = await supabase
           .from('questions')
           .select('*')
-          .order('created_at', { ascending: true })
+          .order('id', { ascending: true })
           .range(from, from + pageSize - 1);
 
         if (error) throw error;
