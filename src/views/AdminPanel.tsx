@@ -27,6 +27,7 @@ import {
 import {
   getOneLiners, bulkAddOneLiners, deleteOneLiner, clearOneLiners,
   pushOneLinersToSupabase, clearOneLinersInSupabase, deleteOneLinersByFilter,
+  namespaceOneLinerId, migrateLegacyBareIds,
 } from '../oneLinerStore';
 
 const EMPTY_Q: Omit<Question, 'id'> = {
@@ -395,7 +396,10 @@ export default function AdminPanel({ onDataChange }: { onDataChange?: () => void
       if (!item.system) errors.push(`${p}: missing "system"`);
       if (errors.filter(e => e.startsWith(p)).length === 0) {
         validated.push({
-          id: String(item.id),
+          // Namespace id with source so pearls from different sources never
+          // collide on Supabase's id PK (e.g. Passmedicine "ol_001" and
+          // Pastest "ol_001" are distinct pearls but would otherwise overwrite).
+          id: namespaceOneLinerId(olSource, String(item.id)),
           source: olSource,
           part: ['Part 1','Part 2','Both'].includes(item.part) ? item.part : 'Both',
           system: item.system,
@@ -435,6 +439,27 @@ export default function AdminPanel({ onDataChange }: { onDataChange?: () => void
     } else {
       setOlError(`❌ Supabase push failed: ${push.error}`);
       setOlMsg('');
+    }
+  };
+
+  const handleMigrateLegacyIds = async () => {
+    setOlSyncing(true);
+    setOlMsg('Upgrading legacy IDs in Supabase…');
+    setOlError('');
+    const result = await migrateLegacyBareIds();
+    if (result.error) {
+      setOlError(`❌ Migration failed: ${result.error}`);
+      setOlMsg('');
+      setOlSyncing(false);
+      return;
+    }
+    // Reload local list (cache was invalidated by migration).
+    setLiners(getOneLiners());
+    setOlSyncing(false);
+    if (result.migrated === 0) {
+      setOlMsg('✅ No legacy IDs found — every pearl is already namespaced.');
+    } else {
+      setOlMsg(`✅ Upgraded ${result.migrated} legacy pearl IDs. Re-uploading the same JSON will now update them in place instead of duplicating.`);
     }
   };
 
@@ -1172,16 +1197,26 @@ export default function AdminPanel({ onDataChange }: { onDataChange?: () => void
             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
               <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
                 <h3 className="font-bold text-gray-800 text-lg">One-Liner Database ({liners.length} total)</h3>
-                <button
-                  onClick={handlePushAllToSupabase}
-                  disabled={olSyncing || liners.length === 0}
-                  className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white px-4 py-2.5 rounded-xl font-bold text-sm transition shadow"
-                >
-                  {olSyncing ? '⏳ Pushing…' : '☁️ Push all to Supabase'}
-                </button>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    onClick={handleMigrateLegacyIds}
+                    disabled={olSyncing}
+                    className="flex items-center gap-2 bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white px-4 py-2.5 rounded-xl font-bold text-sm transition shadow"
+                    title="One-time fix: rewrites any legacy pearls whose IDs aren't namespaced by source. Run this once if you previously imported pearls and saw the count drop after refresh."
+                  >
+                    {olSyncing ? '⏳ Working…' : '🔧 Fix legacy IDs'}
+                  </button>
+                  <button
+                    onClick={handlePushAllToSupabase}
+                    disabled={olSyncing || liners.length === 0}
+                    className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white px-4 py-2.5 rounded-xl font-bold text-sm transition shadow"
+                  >
+                    {olSyncing ? '⏳ Pushing…' : '☁️ Push all to Supabase'}
+                  </button>
+                </div>
               </div>
               <div className="mb-3 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-xl p-3">
-                ⚠️ If one-liners show on desktop but not on mobile, click <strong>"Push all to Supabase"</strong> once to sync all {liners.length} pearls to the cloud.
+                ⚠️ <strong>If pearls disappeared after refresh:</strong> click <strong>"🔧 Fix legacy IDs"</strong> once — this rewrites old rows so Passmedicine and Pastest pearls can never collide on the same ID again. Then re-import your JSON. After that, <strong>"Push all to Supabase"</strong> syncs all {liners.length} pearls to the cloud.
               </div>
               <div className="grid grid-cols-2 gap-4 mb-5">
                 {(['Passmedicine', 'Pastest'] as OneLinerSource[]).map((s) => {
