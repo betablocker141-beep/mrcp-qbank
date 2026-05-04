@@ -14,6 +14,19 @@ export function invalidateOneLinerCache(): void {
   _fetchPromise = null;
 }
 
+// Composite uniqueness key — pearls from different sources can share raw ids
+// (e.g. both Passmedicine and Pastest JSONs may use "ol_001"), so we MUST
+// dedup by (source, id) — never by id alone — or distinct pearls collapse.
+const compositeKey = (l: OneLiner) => `${l.source}::${l.id}`;
+
+// Ensure a pearl's id is globally unique by prefixing the source. Idempotent —
+// safe to call on already-namespaced ids. Used at import time so every row
+// pushed to Supabase has a unique primary key, avoiding upsert collisions.
+export function namespaceOneLinerId(source: OneLinerSource, rawId: string): string {
+  const prefix = `${source}::`;
+  return rawId.startsWith(prefix) ? rawId : `${prefix}${rawId}`;
+}
+
 // ── Core helpers ──────────────────────────────────────────────────────────────
 
 export function getOneLiners(): OneLiner[] {
@@ -102,9 +115,12 @@ export async function syncOneLinersFromSupabase(): Promise<OneLiner[]> {
         catch { return [] as OneLiner[]; }
       })();
 
+      // Merge by COMPOSITE (source, id) key — never by id alone. Two pearls
+      // with the same raw id but different sources are distinct pearls and
+      // must both survive the merge.
       const merged = new Map<string, OneLiner>();
-      for (const l of local) merged.set(l.id, l);         // local first
-      for (const l of fromSupabase) merged.set(l.id, l);  // Supabase wins on conflict
+      for (const l of local) merged.set(compositeKey(l), l);         // local first
+      for (const l of fromSupabase) merged.set(compositeKey(l), l);  // Supabase wins on conflict
 
       const result = [...merged.values()];
       persist(result);
@@ -128,9 +144,10 @@ export async function syncOneLinersFromSupabase(): Promise<OneLiner[]> {
  */
 export async function pushOneLinersToSupabase(liners: OneLiner[]): Promise<{ ok: boolean; error?: string }> {
   try {
-    // Deduplicate by id
+    // Deduplicate by COMPOSITE (source, id) — never by id alone, or pearls
+    // from different sources sharing the same raw id collapse to one row.
     const seen = new Map<string, OneLiner>();
-    for (const l of liners) seen.set(l.id, l);
+    for (const l of liners) seen.set(compositeKey(l), l);
     const rows = [...seen.values()].map(oneLinerToRow);
 
     const chunkSize = 500;
@@ -142,6 +159,85 @@ export async function pushOneLinersToSupabase(liners: OneLiner[]): Promise<{ ok:
     return { ok: true };
   } catch (err: any) {
     return { ok: false, error: err.message ?? String(err) };
+  }
+}
+
+/**
+ * One-time migration: rename Supabase rows whose `id` doesn't start with
+ * `${source}::` to use the namespaced format. Same fix is applied to
+ * localStorage entries. Idempotent — a no-op once everything is namespaced.
+ *
+ * This is the cleanup for the bug where Passmedicine and Pastest pearls
+ * shared raw ids and collided on Supabase's id PK.
+ */
+export async function migrateLegacyBareIds(): Promise<{ migrated: number; error?: string }> {
+  try {
+    // 1. Fetch all rows from Supabase.
+    const allRows: any[] = [];
+    let from = 0;
+    while (true) {
+      const { data, error } = await supabase
+        .from('one_liners')
+        .select('*')
+        .order('id', { ascending: true })
+        .range(from, from + PAGE_SIZE - 1);
+      if (error) throw error;
+      if (!data || data.length === 0) break;
+      allRows.push(...data);
+      if (data.length < PAGE_SIZE) break;
+      from += PAGE_SIZE;
+    }
+
+    // 2. Identify bare-id rows that need renaming.
+    const legacy = allRows.filter((r) => {
+      if (typeof r.id !== 'string' || typeof r.source !== 'string') return false;
+      return !r.id.startsWith(`${r.source}::`);
+    });
+
+    // 3. Migrate Supabase: insert namespaced version, then delete bare-id row.
+    if (legacy.length > 0) {
+      const newRows = legacy.map((r) => ({ ...r, id: `${r.source}::${r.id}` }));
+      const chunkSize = 500;
+      for (let i = 0; i < newRows.length; i += chunkSize) {
+        const chunk = newRows.slice(i, i + chunkSize);
+        const { error } = await supabase
+          .from('one_liners')
+          .upsert(chunk, { onConflict: 'id' });
+        if (error) throw error;
+      }
+      for (const r of legacy) {
+        const { error } = await supabase
+          .from('one_liners')
+          .delete()
+          .eq('id', r.id)
+          .eq('source', r.source);
+        if (error) throw error;
+      }
+    }
+
+    // 4. Migrate localStorage: rewrite any bare-id pearls in place.
+    const local = (() => {
+      try { return JSON.parse(localStorage.getItem(KEY) ?? '[]') as OneLiner[]; }
+      catch { return [] as OneLiner[]; }
+    })();
+    let localChanged = false;
+    const fixed = local.map((l) => {
+      const ns = namespaceOneLinerId(l.source, l.id);
+      if (ns !== l.id) { localChanged = true; return { ...l, id: ns }; }
+      return l;
+    });
+    // Dedupe by composite key in case the rename created collisions with
+    // already-namespaced entries.
+    const dedup = new Map<string, OneLiner>();
+    for (const l of fixed) dedup.set(compositeKey(l), l);
+    if (localChanged || dedup.size !== fixed.length) {
+      persist([...dedup.values()]);
+    }
+
+    invalidateOneLinerCache();
+    return { migrated: legacy.length };
+  } catch (err: any) {
+    return { migrated: 0, error: err.message ?? String(err) };
   }
 }
 
@@ -200,13 +296,11 @@ export function addOneLiner(liner: OneLiner): void {
 
 export function bulkAddOneLiners(liners: OneLiner[]): { added: number; updated: number; skipped: number } {
   const list = getOneLiners();
-  const key = (l: OneLiner) => `${l.source}::${l.system}::${l.id}`;
-  const existingKeys = new Set(list.map(key));
-  const updated = list.map((l) => {
-    const incoming = liners.find((n) => n.id === l.id && n.source === l.source && n.system === l.system);
-    return incoming ?? l;
-  });
-  const brandNew = liners.filter((l) => !existingKeys.has(key(l)));
+  const incomingByKey = new Map(liners.map((l) => [compositeKey(l), l]));
+  const existingKeys = new Set(list.map(compositeKey));
+
+  const updated = list.map((l) => incomingByKey.get(compositeKey(l)) ?? l);
+  const brandNew = liners.filter((l) => !existingKeys.has(compositeKey(l)));
   const updatedCount = liners.length - brandNew.length;
   persist([...updated, ...brandNew]);
   return { added: brandNew.length, updated: updatedCount, skipped: 0 };
