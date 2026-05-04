@@ -14,17 +14,26 @@ export function invalidateOneLinerCache(): void {
   _fetchPromise = null;
 }
 
-// Composite uniqueness key — pearls from different sources can share raw ids
-// (e.g. both Passmedicine and Pastest JSONs may use "ol_001"), so we MUST
-// dedup by (source, id) — never by id alone — or distinct pearls collapse.
-const compositeKey = (l: OneLiner) => `${l.source}::${l.id}`;
+// Composite uniqueness key — pearls from different sources OR different
+// systems within the same source can share raw ids (e.g. Cardiology and
+// Dermatology JSONs both number their pearls "ol_001"…"ol_161"), so we MUST
+// dedup by (source, system, id) — never by anything narrower — or distinct
+// pearls collapse on Supabase's id PK.
+const compositeKey = (l: OneLiner) => `${l.source}::${l.system}::${l.id}`;
 
-// Ensure a pearl's id is globally unique by prefixing the source. Idempotent —
-// safe to call on already-namespaced ids. Used at import time so every row
-// pushed to Supabase has a unique primary key, avoiding upsert collisions.
-export function namespaceOneLinerId(source: OneLinerSource, rawId: string): string {
-  const prefix = `${source}::`;
-  return rawId.startsWith(prefix) ? rawId : `${prefix}${rawId}`;
+// Ensure a pearl's id is globally unique by prefixing source AND system.
+// Idempotent — safe to call on already-namespaced ids (and on ids that were
+// stamped by the earlier source-only scheme: those get upgraded in place).
+export function namespaceOneLinerId(source: OneLinerSource, system: string, rawId: string): string {
+  const fullPrefix = `${source}::${system}::`;
+  if (rawId.startsWith(fullPrefix)) return rawId;
+
+  // Upgrade legacy source-only namespacing: "Pastest::ol_001" → strip the
+  // source prefix before re-stamping with both source and system.
+  const sourcePrefix = `${source}::`;
+  const stripped = rawId.startsWith(sourcePrefix) ? rawId.slice(sourcePrefix.length) : rawId;
+
+  return `${fullPrefix}${stripped}`;
 }
 
 // ── Core helpers ──────────────────────────────────────────────────────────────
@@ -163,12 +172,16 @@ export async function pushOneLinersToSupabase(liners: OneLiner[]): Promise<{ ok:
 }
 
 /**
- * One-time migration: rename Supabase rows whose `id` doesn't start with
- * `${source}::` to use the namespaced format. Same fix is applied to
- * localStorage entries. Idempotent — a no-op once everything is namespaced.
+ * One-time migration: rename Supabase rows whose `id` isn't fully namespaced
+ * to `${source}::${system}::${rawId}`. Catches both:
+ *   - bare ids ("ol_001"),
+ *   - source-only ids from the earlier fix scheme ("Pastest::ol_001").
+ * Same fix is applied to localStorage. Idempotent.
  *
- * This is the cleanup for the bug where Passmedicine and Pastest pearls
- * shared raw ids and collided on Supabase's id PK.
+ * Note: this CANNOT recover pearls already lost in Supabase (e.g. cardio
+ * rows that were overwritten by derma pearls sharing the same id) — those
+ * pearls must be re-imported. The migration only renames surviving rows so
+ * future imports can't collide again.
  */
 export async function migrateLegacyBareIds(): Promise<{ migrated: number; error?: string }> {
   try {
@@ -188,15 +201,20 @@ export async function migrateLegacyBareIds(): Promise<{ migrated: number; error?
       from += PAGE_SIZE;
     }
 
-    // 2. Identify bare-id rows that need renaming.
+    // 2. Identify rows that need renaming. A row is "fully namespaced" only
+    //    if its id starts with `${source}::${system}::`.
     const legacy = allRows.filter((r) => {
-      if (typeof r.id !== 'string' || typeof r.source !== 'string') return false;
-      return !r.id.startsWith(`${r.source}::`);
+      if (typeof r.id !== 'string' || typeof r.source !== 'string' || typeof r.system !== 'string') return false;
+      return !r.id.startsWith(`${r.source}::${r.system}::`);
     });
 
-    // 3. Migrate Supabase: insert namespaced version, then delete bare-id row.
+    // 3. Compute new namespaced ids and update Supabase: upsert new rows,
+    //    then delete the old (different-id) ones.
     if (legacy.length > 0) {
-      const newRows = legacy.map((r) => ({ ...r, id: `${r.source}::${r.id}` }));
+      const newRows = legacy.map((r) => ({
+        ...r,
+        id: namespaceOneLinerId(r.source as OneLinerSource, r.system as string, r.id as string),
+      }));
       const chunkSize = 500;
       for (let i = 0; i < newRows.length; i += chunkSize) {
         const chunk = newRows.slice(i, i + chunkSize);
@@ -205,24 +223,31 @@ export async function migrateLegacyBareIds(): Promise<{ migrated: number; error?
           .upsert(chunk, { onConflict: 'id' });
         if (error) throw error;
       }
-      for (const r of legacy) {
+      // Delete each old row only if its id actually changed (always true here,
+      // since `legacy` was filtered for it). Match on id+source+system to
+      // avoid touching anything we just inserted under the new id.
+      for (let i = 0; i < legacy.length; i++) {
+        const oldRow = legacy[i];
+        const newId = newRows[i].id;
+        if (oldRow.id === newId) continue;
         const { error } = await supabase
           .from('one_liners')
           .delete()
-          .eq('id', r.id)
-          .eq('source', r.source);
+          .eq('id', oldRow.id)
+          .eq('source', oldRow.source)
+          .eq('system', oldRow.system);
         if (error) throw error;
       }
     }
 
-    // 4. Migrate localStorage: rewrite any bare-id pearls in place.
+    // 4. Migrate localStorage: rewrite any non-fully-namespaced pearls.
     const local = (() => {
       try { return JSON.parse(localStorage.getItem(KEY) ?? '[]') as OneLiner[]; }
       catch { return [] as OneLiner[]; }
     })();
     let localChanged = false;
     const fixed = local.map((l) => {
-      const ns = namespaceOneLinerId(l.source, l.id);
+      const ns = namespaceOneLinerId(l.source, l.system, l.id);
       if (ns !== l.id) { localChanged = true; return { ...l, id: ns }; }
       return l;
     });

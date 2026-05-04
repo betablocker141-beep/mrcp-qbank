@@ -395,11 +395,13 @@ export default function AdminPanel({ onDataChange }: { onDataChange?: () => void
       if (!item.content) errors.push(`${p}: missing "content"`);
       if (!item.system) errors.push(`${p}: missing "system"`);
       if (errors.filter(e => e.startsWith(p)).length === 0) {
+        // Namespace id with BOTH source and system so pearls never collide
+        // on Supabase's id PK — covers two collision cases:
+        //   (a) Passmedicine "ol_001" vs Pastest "ol_001" (different sources)
+        //   (b) Pastest Cardiology "ol_001" vs Pastest Dermatology "ol_001"
+        //       (same source, different systems both numbering from 1)
         validated.push({
-          // Namespace id with source so pearls from different sources never
-          // collide on Supabase's id PK (e.g. Passmedicine "ol_001" and
-          // Pastest "ol_001" are distinct pearls but would otherwise overwrite).
-          id: namespaceOneLinerId(olSource, String(item.id)),
+          id: namespaceOneLinerId(olSource, item.system, String(item.id)),
           source: olSource,
           part: ['Part 1','Part 2','Both'].includes(item.part) ? item.part : 'Both',
           system: item.system,
@@ -1216,7 +1218,7 @@ export default function AdminPanel({ onDataChange }: { onDataChange?: () => void
                 </div>
               </div>
               <div className="mb-3 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-xl p-3">
-                ⚠️ <strong>If pearls disappeared after refresh:</strong> click <strong>"🔧 Fix legacy IDs"</strong> once — this rewrites old rows so Passmedicine and Pastest pearls can never collide on the same ID again. Then re-import your JSON. After that, <strong>"Push all to Supabase"</strong> syncs all {liners.length} pearls to the cloud.
+                ⚠️ <strong>If pearls disappeared after refresh:</strong> click <strong>"🔧 Fix legacy IDs"</strong> once — this re-stamps every row's ID with both <em>source</em> and <em>system</em> so two systems numbering from 1 (e.g. Cardiology &amp; Dermatology) can never overwrite each other. Then <strong>re-upload any system whose count dropped</strong> (the migration cannot recover already-overwritten rows). After that, <strong>"Push all to Supabase"</strong> syncs all {liners.length} pearls to the cloud.
               </div>
               <div className="grid grid-cols-2 gap-4 mb-5">
                 {(['Passmedicine', 'Pastest'] as OneLinerSource[]).map((s) => {
