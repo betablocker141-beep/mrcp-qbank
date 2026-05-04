@@ -411,13 +411,14 @@ export default function AdminPanel({ onDataChange }: { onDataChange?: () => void
     const all = getOneLiners();
     setLiners(all);
     setOlJson('');
-    setOlMsg(`✅ Saved to local: ${result.added} new · ${result.updated} updated. Syncing to Supabase…`);
-    // Push to Supabase so all devices can see the data
+    setOlMsg(`✅ Saved to local: ${result.added} new · ${result.updated} updated. Syncing ${all.length} total to Supabase…`);
+    // Push the ENTIRE local collection so Supabase always has everything,
+    // not just the newly imported batch.
     setOlSyncing(true);
-    const push = await pushOneLinersToSupabase(validated);
+    const push = await pushOneLinersToSupabase(all);
     setOlSyncing(false);
     if (push.ok) {
-      setOlMsg(`✅ ${result.added} new · ${result.updated} updated · ${all.length} total — synced to Supabase ✓`);
+      setOlMsg(`✅ ${result.added} new · ${result.updated} updated · ${all.length} total — all synced to Supabase ✓`);
     } else {
       setOlMsg(`⚠️ Saved locally (${all.length} total) but Supabase sync failed: ${push.error}. Run "Push all to Supabase" manually.`);
     }
