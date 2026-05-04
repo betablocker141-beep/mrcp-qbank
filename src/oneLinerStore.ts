@@ -119,6 +119,37 @@ export async function clearOneLinersInSupabase(source?: OneLinerSource): Promise
   }
 }
 
+/** Delete one-liners matching source + optional part + optional system from both localStorage and Supabase. */
+export async function deleteOneLinersByFilter(
+  source: OneLinerSource,
+  part?: OneLiner['part'],
+  system?: string,
+): Promise<{ removed: number; error?: string }> {
+  // Remove from localStorage
+  const before = getOneLiners();
+  const kept = before.filter((l) => {
+    if (l.source !== source) return true;
+    if (part && l.part !== part) return true;
+    if (system && l.system !== system) return true;
+    return false;
+  });
+  persist(kept);
+  const removed = before.length - kept.length;
+
+  // Remove from Supabase
+  try {
+    let query = supabase.from('one_liners').delete().eq('source', source);
+    if (part) query = (query as any).eq('part', part);
+    if (system) query = (query as any).eq('system', system);
+    const { error } = await query;
+    if (error) throw error;
+  } catch (err: any) {
+    return { removed, error: err.message ?? String(err) };
+  }
+
+  return { removed };
+}
+
 // ── CRUD (localStorage) ───────────────────────────────────────────────────────
 
 export function addOneLiner(liner: OneLiner): void {

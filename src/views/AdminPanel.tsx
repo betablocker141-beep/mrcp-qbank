@@ -26,7 +26,7 @@ import {
 } from '../textbookStore';
 import {
   getOneLiners, bulkAddOneLiners, deleteOneLiner, clearOneLiners,
-  pushOneLinersToSupabase, clearOneLinersInSupabase,
+  pushOneLinersToSupabase, clearOneLinersInSupabase, deleteOneLinersByFilter,
 } from '../oneLinerStore';
 
 const EMPTY_Q: Omit<Question, 'id'> = {
@@ -177,6 +177,11 @@ export default function AdminPanel({ onDataChange }: { onDataChange?: () => void
   const [olMsg, setOlMsg] = useState('');
   const [olError, setOlError] = useState('');
   const [olClearConfirm, setOlClearConfirm] = useState<OneLinerSource | null>(null);
+  const [olFilterSource, setOlFilterSource] = useState<OneLinerSource>('Pastest');
+  const [olFilterPart, setOlFilterPart] = useState<OneLiner['part'] | 'Any'>('Part 1');
+  const [olFilterSystem, setOlFilterSystem] = useState<string>('Endocrinology');
+  const [olFilterConfirm, setOlFilterConfirm] = useState(false);
+  const [olFilterMsg, setOlFilterMsg] = useState('');
 
   const [forceUpsert, setForceUpsert] = useState(false);
   const refresh = async () => { const qs = await syncFromSupabase(); setQuestions(qs); };
@@ -429,6 +434,22 @@ export default function AdminPanel({ onDataChange }: { onDataChange?: () => void
     } else {
       setOlError(`❌ Supabase push failed: ${push.error}`);
       setOlMsg('');
+    }
+  };
+
+  const handleDeleteByFilter = async () => {
+    setOlFilterMsg('');
+    setOlSyncing(true);
+    const part = olFilterPart === 'Any' ? undefined : olFilterPart;
+    const system = olFilterSystem === 'Any' ? undefined : olFilterSystem;
+    const result = await deleteOneLinersByFilter(olFilterSource, part, system);
+    setLiners(getOneLiners());
+    setOlSyncing(false);
+    setOlFilterConfirm(false);
+    if (result.error) {
+      setOlFilterMsg(`⚠️ Removed ${result.removed} locally but Supabase delete failed: ${result.error}`);
+    } else {
+      setOlFilterMsg(`✅ Deleted ${result.removed} one-liners from Supabase and local. ${getOneLiners().length} remain.`);
     }
   };
 
@@ -1194,6 +1215,55 @@ export default function AdminPanel({ onDataChange }: { onDataChange?: () => void
                   </div>
                 );
               })()}
+            </div>
+
+            {/* Targeted delete */}
+            <div className="bg-white rounded-2xl shadow-sm border border-red-100 p-6">
+              <h3 className="text-base font-bold text-gray-900 mb-1">Delete by Source / Part / System</h3>
+              <p className="text-xs text-gray-500 mb-4">Use this to remove a specific batch (e.g. Endocrinology Pastest Part 1) without touching the rest.</p>
+              {olFilterMsg && <div className={`mb-3 p-3 rounded-xl text-sm font-semibold border ${olFilterMsg.startsWith('✅') ? 'bg-green-50 border-green-200 text-green-700' : 'bg-yellow-50 border-yellow-200 text-yellow-800'}`}>{olFilterMsg}</div>}
+              <div className="flex flex-wrap gap-3 mb-4">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 mb-1">Source</label>
+                  <select value={olFilterSource} onChange={e => setOlFilterSource(e.target.value as OneLinerSource)}
+                    className="border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-400">
+                    <option value="Passmedicine">🟣 Passmedicine</option>
+                    <option value="Pastest">🟢 Pastest</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 mb-1">Part</label>
+                  <select value={olFilterPart} onChange={e => setOlFilterPart(e.target.value as OneLiner['part'] | 'Any')}
+                    className="border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-400">
+                    <option value="Any">Any</option>
+                    <option value="Part 1">Part 1</option>
+                    <option value="Part 2">Part 2</option>
+                    <option value="Both">Both</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 mb-1">System</label>
+                  <select value={olFilterSystem} onChange={e => setOlFilterSystem(e.target.value)}
+                    className="border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-400">
+                    <option value="Any">Any (all systems)</option>
+                    {Array.from(new Set(liners.map(l => l.system))).sort().map(sys => (
+                      <option key={sys} value={sys}>{sys}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <div className="text-xs text-gray-400 mb-3">
+                Matching: <strong>{liners.filter(l => {
+                  if (l.source !== olFilterSource) return false;
+                  if (olFilterPart !== 'Any' && l.part !== olFilterPart) return false;
+                  if (olFilterSystem !== 'Any' && l.system !== olFilterSystem) return false;
+                  return true;
+                }).length}</strong> one-liners will be deleted
+              </div>
+              <button onClick={() => setOlFilterConfirm(true)} disabled={olSyncing}
+                className="bg-red-500 hover:bg-red-600 text-white px-5 py-2.5 rounded-xl text-sm font-bold transition disabled:opacity-60 shadow">
+                🗑️ Delete Matching One-Liners
+              </button>
             </div>
           </div>
         )}
@@ -2063,8 +2133,46 @@ ORDER BY source, part;`}</pre>
             <p className="text-gray-500 text-sm text-center mb-6">This will permanently delete all {liners.filter(l => l.source === olClearConfirm).length} {olClearConfirm} one-liners.</p>
             <div className="flex gap-3">
               <button onClick={() => setOlClearConfirm(null)} className="flex-1 border border-gray-300 rounded-xl py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 transition">Cancel</button>
-              <button onClick={() => { clearOneLiners(olClearConfirm); setLiners(getOneLiners()); setOlClearConfirm(null); }}
+              <button onClick={async () => {
+                  clearOneLiners(olClearConfirm!);
+                  await clearOneLinersInSupabase(olClearConfirm!);
+                  setLiners(getOneLiners());
+                  setOlClearConfirm(null);
+                }}
                 className="flex-1 bg-red-500 text-white rounded-xl py-2.5 text-sm font-semibold hover:bg-red-600 transition">Clear All</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* OneLiner Targeted-Delete Confirm Modal */}
+      {olFilterConfirm && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-sm w-full">
+            <div className="text-4xl text-center mb-3">🗑️</div>
+            <h3 className="text-lg font-bold text-gray-900 text-center mb-2">Delete One-Liners?</h3>
+            <p className="text-gray-500 text-sm text-center mb-2">
+              This will permanently delete all matching one-liners from <strong>both</strong> Supabase and local storage.
+            </p>
+            <div className="bg-gray-50 rounded-xl px-4 py-3 text-sm text-gray-700 mb-5 text-center space-y-0.5">
+              <div><strong>Source:</strong> {olFilterSource}</div>
+              <div><strong>Part:</strong> {olFilterPart}</div>
+              <div><strong>System:</strong> {olFilterSystem}</div>
+              <div className="pt-1 text-red-600 font-bold">
+                {liners.filter(l => {
+                  if (l.source !== olFilterSource) return false;
+                  if (olFilterPart !== 'Any' && l.part !== olFilterPart) return false;
+                  if (olFilterSystem !== 'Any' && l.system !== olFilterSystem) return false;
+                  return true;
+                }).length} one-liners will be removed
+              </div>
+            </div>
+            <div className="flex gap-3">
+              <button onClick={() => setOlFilterConfirm(false)} className="flex-1 border border-gray-300 rounded-xl py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 transition">Cancel</button>
+              <button onClick={handleDeleteByFilter} disabled={olSyncing}
+                className="flex-1 bg-red-500 text-white rounded-xl py-2.5 text-sm font-semibold hover:bg-red-600 transition disabled:opacity-60">
+                {olSyncing ? '⏳ Deleting…' : 'Delete'}
+              </button>
             </div>
           </div>
         </div>
