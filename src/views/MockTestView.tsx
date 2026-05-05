@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
 import { Question, MRCPPart, PART1_SYSTEMS, PART2_SYSTEMS, SYSTEM_ICONS } from '../types';
+import { getAnsweredQuestionIds, resetAnsweredQuestionIds } from '../store';
 
 interface MockTestViewProps {
   questions: Question[];
@@ -37,10 +38,13 @@ export default function MockTestView({ questions, activePart, startQuiz, isLoadi
   const [count, setCount] = useState<number>(50);
   const [customCount, setCustomCount] = useState<string>('');
   const [useCustom, setUseCustom] = useState(false);
+  const [skipAnswered, setSkipAnswered] = useState(true);
+  const [answeredVersion, setAnsweredVersion] = useState(0);
+  const answeredIds = useMemo(() => getAnsweredQuestionIds(), [answeredVersion]);
 
   const systems = part === 'Part 1' ? PART1_SYSTEMS : PART2_SYSTEMS;
 
-  const pool = useMemo(() => {
+  const fullPool = useMemo(() => {
     return questions.filter((q) => {
       const partOk = q.source === 'Passmedicine' || q.source === 'Pastest'
         ? true
@@ -50,6 +54,15 @@ export default function MockTestView({ questions, activePart, startQuiz, isLoadi
       return partOk && srcOk && sysOk;
     });
   }, [questions, part, source, system]);
+
+  // By default, exclude questions the user has already answered so
+  // batches don't repeat across sessions.
+  const pool = useMemo(() => {
+    if (!skipAnswered) return fullPool;
+    return fullPool.filter((q) => !answeredIds.has(q.id));
+  }, [fullPool, skipAnswered, answeredIds]);
+
+  const completedInPool = fullPool.length - pool.length;
 
   const finalCount = useCustom
     ? Math.min(Math.max(parseInt(customCount) || 0, 1), pool.length)
@@ -62,6 +75,14 @@ export default function MockTestView({ questions, activePart, startQuiz, isLoadi
     if (!canStart) return;
     const shuffled = [...pool].sort(() => Math.random() - 0.5).slice(0, finalCount);
     startQuiz(shuffled, 'timed');
+  };
+
+  const handleResetProgress = () => {
+    if (answeredIds.size === 0) return;
+    if (window.confirm(`Reset your progress? This will clear ${answeredIds.size} answered question${answeredIds.size === 1 ? '' : 's'} so you can practise them again. Your performance stats are not affected.`)) {
+      resetAnsweredQuestionIds();
+      setAnsweredVersion((v) => v + 1);
+    }
   };
 
   return (
@@ -247,7 +268,34 @@ export default function MockTestView({ questions, activePart, startQuiz, isLoadi
             )}
             <span className="text-sm text-gray-500 font-medium">
               {pool.length.toLocaleString()} questions available in this selection
+              {skipAnswered && completedInPool > 0 && (
+                <span className="text-emerald-600 font-semibold"> · {completedInPool.toLocaleString()} already answered</span>
+              )}
             </span>
+          </div>
+
+          {/* No-repeat controls (per user) */}
+          <div className="flex flex-wrap items-center gap-2 mt-4 pt-4 border-t border-gray-100">
+            <button
+              onClick={() => setSkipAnswered((v) => !v)}
+              title={skipAnswered ? 'Already-answered questions are excluded from new mock tests' : 'All matching questions can appear in new mock tests'}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold border-2 transition-all ${
+                skipAnswered
+                  ? 'border-emerald-600 bg-emerald-600 text-white'
+                  : 'border-gray-200 bg-white text-gray-600 hover:border-emerald-300'
+              }`}
+            >
+              ✓ {skipAnswered ? 'Skipping answered' : 'Including answered'}
+            </button>
+            {answeredIds.size > 0 && (
+              <button
+                onClick={handleResetProgress}
+                title="Clear your answered-question history so all questions become available again"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold border-2 border-rose-200 bg-white text-rose-600 hover:bg-rose-50 transition-all"
+              >
+                Reset progress ({answeredIds.size})
+              </button>
+            )}
           </div>
         </div>
 
@@ -287,11 +335,21 @@ export default function MockTestView({ questions, activePart, startQuiz, isLoadi
             </div>
           ) : (
             <div className="text-center py-4">
-              <div className="text-gray-400 text-4xl mb-2">🔍</div>
-              <div className="text-gray-600 font-semibold">
-                {isLoading ? 'Loading questions…' : 'No questions match your selection'}
+              <div className="text-gray-400 text-4xl mb-2">
+                {!isLoading && skipAnswered && fullPool.length > 0 ? '✅' : '🔍'}
               </div>
-              <div className="text-gray-400 text-sm mt-1">Try adjusting the filters above</div>
+              <div className="text-gray-600 font-semibold">
+                {isLoading
+                  ? 'Loading questions…'
+                  : skipAnswered && fullPool.length > 0
+                  ? "You've answered every question matching this selection"
+                  : 'No questions match your selection'}
+              </div>
+              <div className="text-gray-400 text-sm mt-1">
+                {!isLoading && skipAnswered && fullPool.length > 0
+                  ? 'Switch to "Including answered" to revise, or reset progress to start over.'
+                  : 'Try adjusting the filters above'}
+              </div>
             </div>
           )}
         </div>
