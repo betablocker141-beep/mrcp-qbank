@@ -186,8 +186,31 @@ export async function bulkReassignSystem(
 }
 
 const QUESTIONS_KEY = 'mrcp_questions_v3';
-const STATS_KEY = 'mrcp_stats';
+const STATS_KEY_PREFIX = 'mrcp_stats';
+const ANSWERED_KEY_PREFIX = 'mrcp_answered';
 const SESSIONS_KEY = 'mrcp_sessions';
+const AUTH_SESSION_KEY = 'mrcp_auth_session'; // mirrors authStore.SESSION_KEY
+
+// ── Current-user scoping ───────────────────────────────────
+// Stats and answered-question history are namespaced by user id so
+// multiple users on the same browser don't share progress, and the
+// quiz sampler can exclude already-answered questions per user.
+let _currentUserId: string | null = (() => {
+  try {
+    const raw = localStorage.getItem(AUTH_SESSION_KEY);
+    return raw ? (JSON.parse(raw)?.id ?? null) : null;
+  } catch {
+    return null;
+  }
+})();
+
+export function setCurrentUserId(id: string | null): void {
+  _currentUserId = id;
+}
+
+function userKey(prefix: string): string {
+  return `${prefix}:${_currentUserId ?? 'anon'}`;
+}
 
 // ── Questions ──────────────────────────────────────────────
 export function getQuestions(): Question[] {
@@ -233,13 +256,45 @@ export function updateQuestion(updated: Question): void {
 // ── Stats ──────────────────────────────────────────────────
 export function getStats(): UserStats {
   try {
-    const raw = localStorage.getItem(STATS_KEY);
+    const raw = localStorage.getItem(userKey(STATS_KEY_PREFIX));
     if (!raw) return emptyStats();
     const parsed = JSON.parse(raw);
     return parsed;
   } catch {
     return emptyStats();
   }
+}
+
+// ── Answered-question history (per user) ───────────────────
+// Tracks question IDs the current user has answered in any finished
+// session, so quiz sampling can exclude them and avoid repeats.
+export function getAnsweredQuestionIds(): Set<string> {
+  try {
+    const raw = localStorage.getItem(userKey(ANSWERED_KEY_PREFIX));
+    if (!raw) return new Set();
+    return new Set(JSON.parse(raw) as string[]);
+  } catch {
+    return new Set();
+  }
+}
+
+function saveAnsweredQuestionIds(ids: Set<string>): void {
+  try {
+    localStorage.setItem(userKey(ANSWERED_KEY_PREFIX), JSON.stringify(Array.from(ids)));
+  } catch {
+    // quota exceeded — drop silently
+  }
+}
+
+export function addAnsweredQuestionIds(ids: string[]): void {
+  if (ids.length === 0) return;
+  const set = getAnsweredQuestionIds();
+  ids.forEach((id) => set.add(id));
+  saveAnsweredQuestionIds(set);
+}
+
+export function resetAnsweredQuestionIds(): void {
+  localStorage.removeItem(userKey(ANSWERED_KEY_PREFIX));
 }
 
 function emptyStats(): UserStats {
@@ -256,10 +311,12 @@ export function recordSession(session: QuizSession): void {
   const stats = getStats();
   let correct = 0;
   const systemSet = new Set<string>();
+  const answeredIds: string[] = [];
 
   session.questions.forEach((q) => {
     const chosen = session.answers[q.id];
     if (!chosen) return;
+    answeredIds.push(q.id);
     const isCorrect = chosen === q.correctAnswer;
     if (isCorrect) correct++;
 
@@ -298,7 +355,10 @@ export function recordSession(session: QuizSession): void {
 
   // Keep last 50 history entries
   stats.history = stats.history.slice(0, 50);
-  localStorage.setItem(STATS_KEY, JSON.stringify(stats));
+  localStorage.setItem(userKey(STATS_KEY_PREFIX), JSON.stringify(stats));
+
+  // Persist answered-question history so future batches skip these
+  addAnsweredQuestionIds(answeredIds);
 }
 
 // ── Sessions ───────────────────────────────────────────────
@@ -322,8 +382,15 @@ export function getSessions(): any[] {
 
 export function clearAllData(): void {
   localStorage.removeItem(QUESTIONS_KEY);
-  localStorage.removeItem(STATS_KEY);
   localStorage.removeItem(SESSIONS_KEY);
+  // Clear all per-user stats and answered-question history
+  for (let i = localStorage.length - 1; i >= 0; i--) {
+    const k = localStorage.key(i);
+    if (!k) continue;
+    if (k.startsWith(`${STATS_KEY_PREFIX}:`) || k.startsWith(`${ANSWERED_KEY_PREFIX}:`)) {
+      localStorage.removeItem(k);
+    }
+  }
 }
 
 // ── Default seed questions ─────────────────────────────────

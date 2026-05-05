@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react';
 import { PART1_SYSTEMS, PART2_SYSTEMS, Difficulty, Question, MRCPPart, QBankSource, QBANK_SOURCES, QBANK_SOURCE_COLORS, QBANK_SOURCE_ICONS } from '../types';
 import QuestionImage from '../components/QuestionImage';
 import RichText from '../components/RichText';
+import { getAnsweredQuestionIds, resetAnsweredQuestionIds } from '../store';
 import {
   SearchIcon, PlayIcon, ChevronDownIcon, LightbulbIcon,
   BookIcon, CheckIcon, ImageIcon,
@@ -38,6 +39,13 @@ export default function QuestionBank({ activePart, selectedSystem, setSelectedSy
   const [quizMode, setQuizMode] = useState<'tutor' | 'timed'>('tutor');
   const [quizCount, setQuizCount] = useState(10);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [skipAnswered, setSkipAnswered] = useState(true);
+  // Bumped after reset to force the answered-ids re-read.
+  const [answeredVersion, setAnsweredVersion] = useState(0);
+  const answeredIds = useMemo(
+    () => getAnsweredQuestionIds(),
+    [answeredVersion, partQuestions]
+  );
 
   const partSystems = activePart === 'Part 1' ? [...PART1_SYSTEMS] : [...PART2_SYSTEMS];
 
@@ -62,13 +70,30 @@ export default function QuestionBank({ activePart, selectedSystem, setSelectedSy
     });
   }, [partQuestions, selectedSystem, diffFilter, yearFilter, sourceFilter, imagesOnly, search]);
 
+  // Pool used to start a quiz batch — by default excludes questions
+  // the user has already answered, so batches don't repeat.
+  const quizPool = useMemo(() => {
+    if (!skipAnswered) return filtered;
+    return filtered.filter((q) => !answeredIds.has(q.id));
+  }, [filtered, skipAnswered, answeredIds]);
+
+  const completedInView = filtered.length - quizPool.length;
+
   const diffColor = (d: Difficulty) =>
     d === 'Easy' ? 'bg-green-100 text-green-700' : d === 'Medium' ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700';
 
   const handleStartQuiz = () => {
-    if (filtered.length === 0) return;
-    const shuffled = [...filtered].sort(() => Math.random() - 0.5).slice(0, quizCount);
+    if (quizPool.length === 0) return;
+    const shuffled = [...quizPool].sort(() => Math.random() - 0.5).slice(0, quizCount);
     startQuiz(shuffled, quizMode);
+  };
+
+  const handleResetProgress = () => {
+    if (answeredIds.size === 0) return;
+    if (window.confirm(`Reset your progress? This will clear ${answeredIds.size} answered question${answeredIds.size === 1 ? '' : 's'} so you can practise them again. Your performance stats are not affected.`)) {
+      resetAnsweredQuestionIds();
+      setAnsweredVersion((v) => v + 1);
+    }
   };
 
   const partColor = activePart === 'Part 1' ? 'bg-sky-600 hover:bg-sky-700' : 'bg-emerald-600 hover:bg-emerald-700';
@@ -89,7 +114,12 @@ export default function QuestionBank({ activePart, selectedSystem, setSelectedSy
                   {activePart}
                 </span>
               </div>
-              <p className="text-gray-500 text-sm">{filtered.length} of {partQuestions.length} questions</p>
+              <p className="text-gray-500 text-sm">
+                {filtered.length} of {partQuestions.length} questions
+                {skipAnswered && completedInView > 0 && (
+                  <> · <span className="text-emerald-600 font-semibold">{completedInView} completed</span> · <span className="text-blue-600 font-semibold">{quizPool.length} new</span></>
+                )}
+              </p>
             </div>
 
             {/* Quiz Controls */}
@@ -114,7 +144,7 @@ export default function QuestionBank({ activePart, selectedSystem, setSelectedSy
               </select>
               <button
                 onClick={handleStartQuiz}
-                disabled={filtered.length === 0}
+                disabled={quizPool.length === 0}
                 className={`${partColor} text-white px-5 py-2 rounded-lg text-sm font-bold transition disabled:opacity-40 disabled:cursor-not-allowed shadow flex items-center gap-2`}
               >
                 <PlayIcon className="w-4 h-4" /> Start Quiz
@@ -208,6 +238,31 @@ export default function QuestionBank({ activePart, selectedSystem, setSelectedSy
               <ImageIcon className="w-3.5 h-3.5" />
               Images Only
             </button>
+
+            {/* Skip-answered toggle (no-repeat across batches) */}
+            <button
+              onClick={() => setSkipAnswered((v) => !v)}
+              title={skipAnswered ? 'Already-answered questions are excluded from new batches' : 'All matching questions can appear in new batches'}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition border ${
+                skipAnswered
+                  ? 'bg-emerald-600 text-white border-emerald-600'
+                  : 'bg-white text-gray-600 border-gray-300 hover:border-emerald-400'
+              }`}
+            >
+              <CheckIcon className="w-3.5 h-3.5" />
+              {skipAnswered ? 'Skipping answered' : 'Including answered'}
+            </button>
+
+            {/* Reset progress (per-user) */}
+            {answeredIds.size > 0 && (
+              <button
+                onClick={handleResetProgress}
+                title="Clear your answered-question history so all questions become available again"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition border bg-white text-rose-600 border-rose-300 hover:bg-rose-50"
+              >
+                Reset progress ({answeredIds.size})
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -221,6 +276,28 @@ export default function QuestionBank({ activePart, selectedSystem, setSelectedSy
             </div>
             <div className="text-xl font-semibold text-gray-600">No questions found</div>
             <div className="text-gray-400 mt-2">Try adjusting your filters</div>
+          </div>
+        ) : skipAnswered && quizPool.length === 0 ? (
+          <div className="text-center py-20">
+            <div className="w-16 h-16 bg-emerald-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
+              <CheckIcon className="w-8 h-8 text-emerald-600" />
+            </div>
+            <div className="text-xl font-semibold text-gray-700">You've answered every question in this filter</div>
+            <div className="text-gray-500 mt-2">Toggle "Including answered" to revise, or reset progress to start over.</div>
+            <div className="flex justify-center gap-3 mt-5">
+              <button
+                onClick={() => setSkipAnswered(false)}
+                className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-bold"
+              >
+                Include answered
+              </button>
+              <button
+                onClick={handleResetProgress}
+                className="bg-white text-rose-600 border border-rose-300 hover:bg-rose-50 px-4 py-2 rounded-lg text-sm font-bold"
+              >
+                Reset progress
+              </button>
+            </div>
           </div>
         ) : (
           <div className="space-y-3">

@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect } from 'react';
 import { Question, QuizSession, MRCPPart, User } from './types';
-import { saveSession, getQuestions, syncFromSupabase } from './store';
+import { saveSession, getQuestions, syncFromSupabase, setCurrentUserId } from './store';
 import { getSession, signOut } from './authStore';
 import Dashboard from './views/Dashboard';
 import QuestionBank from './views/QuestionBank';
@@ -319,6 +319,12 @@ export function App() {
     // Sync one-liners from Supabase in the background so all devices see the same data
     syncOneLinersFromSupabase().catch(() => { /* fallback to localStorage */ });
   }, []);
+
+  // Keep store's current-user pointer in sync so per-user stats and
+  // answered-question history are read/written under the right key.
+  useEffect(() => {
+    setCurrentUserId(user?.id ?? null);
+  }, [user?.id]);
 
   // Check subscription status from Supabase on every login
   useEffect(() => {
