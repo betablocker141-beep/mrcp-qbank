@@ -9,23 +9,18 @@ import ResultsView from './views/ResultsView';
 import StatsView from './views/StatsView';
 import AdminPanel from './views/AdminPanel';
 import AuthView from './views/AuthView';
-import TextbookView from './views/TextbookView';
-import OneLinerView from './views/OneLinerView';
 import MockTestView from './views/MockTestView';
-import DailyMockView from './views/DailyMockView';
 import UpgradeView from './views/UpgradeView';
-import { saveDailyResult, getTodayUTC } from './dailyMockStore';
 import { checkSubscription } from './authStore';
-import { syncOneLinersFromSupabase } from './oneLinerStore';
 import {
   HomeIcon, BookOpenIcon, BarChartIcon, SettingsIcon,
   LogOutIcon, ChevronDownIcon, ActivityIcon, LockIcon,
 } from './components/Icons';
 
-export type View = 'dashboard' | 'bank' | 'quiz' | 'results' | 'stats' | 'admin' | 'textbooks' | 'oneliners' | 'mock' | 'daily-mock' | 'upgrade';
+export type View = 'dashboard' | 'bank' | 'quiz' | 'results' | 'stats' | 'admin' | 'mock' | 'upgrade';
 
 // Views that require a subscription (admin always bypasses)
-const PREMIUM_VIEWS: View[] = ['dashboard', 'bank', 'quiz', 'results', 'mock', 'stats', 'textbooks', 'oneliners'];
+const PREMIUM_VIEWS: View[] = ['dashboard', 'bank', 'quiz', 'results', 'mock', 'stats'];
 
 function getInitials(name: string) {
   return name.split(' ').map((n) => n[0]).join('').toUpperCase().slice(0, 2);
@@ -64,10 +59,7 @@ function Navbar({
   const navItems: { label: string; view: View; icon: React.ReactNode; premium?: boolean }[] = [
     { label: 'Dashboard',     view: 'dashboard',  icon: <HomeIcon className="w-4 h-4" />,          premium: true },
     { label: 'Question Bank', view: 'bank',        icon: <BookOpenIcon className="w-4 h-4" />,      premium: true },
-    { label: 'Daily Mock',    view: 'daily-mock',  icon: <span className="text-sm">🎯</span> },
     { label: 'Mock Tests',    view: 'mock',        icon: <span className="text-sm">🏆</span>,        premium: true },
-    { label: 'Textbooks',     view: 'textbooks',   icon: <span className="text-sm">📚</span>,        premium: true },
-    { label: 'Pearls',        view: 'oneliners',   icon: <span className="text-sm">💡</span>,        premium: true },
     { label: 'Performance',   view: 'stats',       icon: <BarChartIcon className="w-4 h-4" />,      premium: true },
   ];
 
@@ -187,21 +179,9 @@ function Navbar({
                       className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-gray-700 hover:bg-blue-50 hover:text-blue-700 transition text-sm font-medium">
                       <BookOpenIcon className="w-4 h-4" /> Question Bank
                     </button>
-                    <button onClick={() => { setView('daily-mock'); setUserMenuOpen(false); }}
-                      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-gray-700 hover:bg-indigo-50 hover:text-indigo-700 transition text-sm font-medium">
-                      <span>🎯</span> Daily Mock Exam
-                    </button>
                     <button onClick={() => { setView('mock'); setUserMenuOpen(false); }}
                       className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-gray-700 hover:bg-amber-50 hover:text-amber-700 transition text-sm font-medium">
                       <span>🏆</span> Mock Tests
-                    </button>
-                    <button onClick={() => { setView('textbooks'); setUserMenuOpen(false); }}
-                      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-gray-700 hover:bg-violet-50 hover:text-violet-700 transition text-sm font-medium">
-                      <span>📚</span> Textbooks
-                    </button>
-                    <button onClick={() => { setView('oneliners'); setUserMenuOpen(false); }}
-                      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-gray-700 hover:bg-amber-50 hover:text-amber-700 transition text-sm font-medium">
-                      <span>💡</span> One-Liners & Pearls
                     </button>
                     {isAdmin && (
                       <button onClick={() => { setView('admin'); setUserMenuOpen(false); }}
@@ -246,7 +226,6 @@ function MobileNavBar({
   const items: { label: string; view: View; icon: React.ReactNode; premium?: boolean }[] = [
     { label: 'Home',        view: 'dashboard',  icon: <HomeIcon className="w-5 h-5" />,     premium: true },
     { label: 'Bank',        view: 'bank',        icon: <BookOpenIcon className="w-5 h-5" />, premium: true },
-    { label: 'Daily',       view: 'daily-mock',  icon: <span className="text-lg">🎯</span> },
     { label: 'Mock',        view: 'mock',        icon: <span className="text-lg">🏆</span>,   premium: true },
     { label: 'Stats',       view: 'stats',       icon: <BarChartIcon className="w-5 h-5" />, premium: true },
   ];
@@ -303,8 +282,6 @@ export function App() {
   const [isLoading, setIsLoading] = useState(() => getQuestions().length === 0);
   // Track which qbank the user navigated from (for QuestionBank source pre-filter)
   const [activeSource, setActiveSource] = useState<'All' | 'Passmedicine' | 'Pastest'>('All');
-  // Tracks whether the current quiz was started from Daily Mock (to save result on finish)
-  const [dailyMockPart, setDailyMockPart] = useState<MRCPPart | null>(null);
 
   const refreshQuestions = useCallback((showLoading = false) => {
     if (showLoading) setIsLoading(true);
@@ -316,8 +293,6 @@ export function App() {
 
   useEffect(() => {
     refreshQuestions(getQuestions().length === 0);
-    // Sync one-liners from Supabase in the background so all devices see the same data
-    syncOneLinersFromSupabase().catch(() => { /* fallback to localStorage */ });
   }, []);
 
   // Keep store's current-user pointer in sync so per-user stats and
@@ -338,9 +313,7 @@ export function App() {
 
   function handleAuth(authedUser: User) {
     setUser(authedUser);
-    // Free users land on daily-mock; subscribed users and admins go to dashboard
-    const sub = authedUser.subscribed || authedUser.role === 'admin';
-    setView(sub ? 'dashboard' : 'daily-mock');
+    setView('dashboard');
   }
 
   function handleLogout() {
@@ -370,43 +343,11 @@ export function App() {
     []
   );
 
-  const startDailyMock = useCallback(
-    (part: MRCPPart, dailyQuestions: Question[]) => {
-      setDailyMockPart(part);
-      startQuiz(dailyQuestions, 'timed');
-    },
-    [startQuiz]
-  );
-
   const handleFinishQuiz = useCallback((session: QuizSession) => {
     setCompletedSession(session);
     setActiveSession(null);
-
-    // If this was a daily mock, save the result and go back to daily-mock
-    if (dailyMockPart && user) {
-      const correct = session.questions.filter(
-        (q) => session.answers[q.id] === q.correctAnswer
-      ).length;
-      const timeTaken = session.endTime
-        ? Math.floor((session.endTime - session.startTime) / 1000)
-        : 0;
-      saveDailyResult({
-        userId: user.id,
-        userName: user.name,
-        part: dailyMockPart,
-        date: getTodayUTC(),
-        score: correct,
-        total: session.questions.length,
-        percentage: Math.round((correct / session.questions.length) * 100),
-        timeTaken,
-        completedAt: new Date().toISOString(),
-      });
-      setDailyMockPart(null);
-      setView('daily-mock');
-    } else {
-      setView('results');
-    }
-  }, [dailyMockPart, user]);
+    setView('results');
+  }, []);
 
   const handleReviewAnswers = useCallback(() => {
     if (!completedSession) return;
@@ -504,16 +445,7 @@ export function App() {
       )}
 
       {view === 'upgrade' && (
-        <UpgradeView onGoToDaily={() => setView('daily-mock')} />
-      )}
-
-      {view === 'daily-mock' && (
-        <DailyMockView
-          questions={questions}
-          user={user}
-          onStart={startDailyMock}
-          isLoading={isLoading}
-        />
+        <UpgradeView onGoToDaily={() => setView('dashboard')} />
       )}
 
       {view === 'stats' && <StatsView activePart={activePart} />}
@@ -526,10 +458,6 @@ export function App() {
           isLoading={isLoading}
         />
       )}
-
-      {view === 'textbooks' && <TextbookView />}
-
-      {view === 'oneliners' && <OneLinerView />}
 
       {view === 'admin' && user.role === 'admin' && <AdminPanel onDataChange={refreshQuestions} />}
 

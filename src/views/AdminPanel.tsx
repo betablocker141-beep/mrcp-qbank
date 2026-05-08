@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+﻿import { useState, useRef, useEffect } from 'react';
 import {
   getQuestions,
   saveQuestions,
@@ -9,6 +9,7 @@ import {
   addQuestionToSupabase,
   addQuestionsToSupabase,
   syncFromSupabase,
+  invalidateSessionCache,
   updateQuestionInSupabase,
   deleteQuestionFromSupabase,
   clearAllQuestionsFromSupabase,
@@ -18,17 +19,9 @@ import {
   patchNullSourcesToMRCP,
   bulkReassignSystem,
 } from '../store';
-import { Question, SYSTEMS, PART1_SYSTEMS, PART2_SYSTEMS, Difficulty, MRCPPart, IMAGE_TYPES, ImageType, QBankSource, QBANK_SOURCES, QBANK_SOURCE_COLORS, QBANK_SOURCE_ICONS, Textbook, OneLiner, OneLinerSource } from '../types';
+import { Question, SYSTEMS, PART1_SYSTEMS, PART2_SYSTEMS, Difficulty, MRCPPart, IMAGE_TYPES, ImageType, QBankSource, QBANK_SOURCES, QBANK_SOURCE_COLORS, QBANK_SOURCE_ICONS } from '../types';
 import UserManagement from '../components/UserManagement';
 import QuestionImage from '../components/QuestionImage';
-import {
-  getTextbooks, saveTextbook, deleteTextbook, generateTextbookId,
-} from '../textbookStore';
-import {
-  getOneLiners, bulkAddOneLiners, deleteOneLiner, clearOneLiners,
-  pushOneLinersToSupabase, clearOneLinersInSupabase, deleteOneLinersByFilter,
-  namespaceOneLinerId, migrateLegacyBareIds,
-} from '../oneLinerStore';
 
 const EMPTY_Q: Omit<Question, 'id'> = {
   part: 'Part 1',
@@ -63,7 +56,7 @@ const SAMPLE_JSON = `[
     "year": "2023",
     "difficulty": "Medium",
     "source": "Passmedicine",
-    "stem": "A 58-year-old man presents with a 3-month history of fatigue and breathlessness. His blood results are shown below:\\n\\n| Investigation | Result | Reference Range |\\n|---|---|---|\\n| Haemoglobin | 7.2 g/dL | 13.5–17.5 g/dL |\\n| MCV | 68 fL | 80–100 fL |\\n| Ferritin | 4 µg/L | 12–300 µg/L |\\n| B12 | 312 ng/L | 197–771 ng/L |\\n\\nWhat is the most likely diagnosis?",
+    "stem": "A 58-year-old man presents with a 3-month history of fatigue and breathlessness. His blood results are shown below:\\n\\n| Investigation | Result | Reference Range |\\n|---|---|---|\\n| Haemoglobin | 7.2 g/dL | 13.5â€“17.5 g/dL |\\n| MCV | 68 fL | 80â€“100 fL |\\n| Ferritin | 4 Âµg/L | 12â€“300 Âµg/L |\\n| B12 | 312 ng/L | 197â€“771 ng/L |\\n\\nWhat is the most likely diagnosis?",
     "options": [
       { "id": "A", "text": "Anterior STEMI" },
       { "id": "B", "text": "NSTEMI" },
@@ -72,7 +65,7 @@ const SAMPLE_JSON = `[
       { "id": "E", "text": "Hyperkalaemia" }
     ],
     "correctAnswer": "A",
-    "explanation": "The ECG shows ST elevation in leads V1–V4 with reciprocal ST depression in the inferior leads (II, III, aVF), consistent with an anterior STEMI due to LAD occlusion. Immediate PCI is indicated within 120 minutes.",
+    "explanation": "The ECG shows ST elevation in leads V1â€“V4 with reciprocal ST depression in the inferior leads (II, III, aVF), consistent with an anterior STEMI due to LAD occlusion. Immediate PCI is indicated within 120 minutes.",
     "reference": "ESC Guidelines on STEMI 2023",
     "tags": ["ECG", "STEMI", "Chest Pain", "PCI"],
     "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/9/9e/STEMI.png/800px-STEMI.png",
@@ -86,7 +79,6 @@ type AdminTab =
   | 'upload-pm1' | 'upload-pm2'
   | 'upload-pt1' | 'upload-pt2'
   | 'upload-custom'
-  | 'textbooks' | 'oneliners'
   | 'manage' | 'manual' | 'template' | 'diagnostics' | 'users';
 
 export default function AdminPanel({ onDataChange }: { onDataChange?: () => void }) {
@@ -105,7 +97,7 @@ export default function AdminPanel({ onDataChange }: { onDataChange?: () => void
   const [partFilter, setPartFilter] = useState<MRCPPart | 'All'>('All');
   const fileRef = useRef<HTMLInputElement>(null);
 
-  // ── Bulk Reassign state ───────────────────────────────────────────────────
+  // â”€â”€ Bulk Reassign state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const [reassignFrom, setReassignFrom] = useState('Clinical Sciences');
   const [reassignTo, setReassignTo] = useState('Palliative Medicine');
   const [reassignPart, setReassignPart] = useState<'Part 1' | 'Part 2' | 'Both'>('Part 1');
@@ -114,7 +106,7 @@ export default function AdminPanel({ onDataChange }: { onDataChange?: () => void
   const [reassignResult, setReassignResult] = useState<string | null>(null);
   const [reassignConfirm, setReassignConfirm] = useState(false);
 
-  // ── Diagnostics state ─────────────────────────────────────────────────────
+  // â”€â”€ Diagnostics state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const [diagLoading, setDiagLoading] = useState(false);
   const [diagResult, setDiagResult] = useState<string | null>(null);
   const [schemaOk, setSchemaOk] = useState<boolean | null>(null);  // null = not checked yet
@@ -132,7 +124,8 @@ export default function AdminPanel({ onDataChange }: { onDataChange?: () => void
       setSchemaOk(columnOk);
 
       const total = await getSupabaseTotalCount();
-      // Re-fetch all questions fresh
+      // Re-fetch all questions fresh (bypass TTL cache for diagnostics)
+      invalidateSessionCache();
       const freshQs = await syncFromSupabase();
       setQuestions(freshQs);
       const bySource: Record<string, number> = {};
@@ -142,58 +135,38 @@ export default function AdminPanel({ onDataChange }: { onDataChange?: () => void
         bySource[q.source ?? 'null/undefined'] = (bySource[q.source ?? 'null/undefined'] ?? 0) + 1;
         byPart[q.part ?? 'null'] = (byPart[q.part ?? 'null'] ?? 0) + 1;
       });
-      let result = `${columnOk ? '✅' : '❌'} source column: ${columnOk ? 'EXISTS' : 'MISSING — run the SQL fix below!'}\n`;
-      result += `✅ Supabase Total Rows: ${total}\n`;
-      result += `✅ Synced to App: ${freshQs.length} questions\n\n`;
-      result += `📊 By Source:\n`;
-      Object.entries(bySource).sort().forEach(([s, c]) => { result += `  • ${s}: ${c}\n`; });
-      result += `\n📋 By Part:\n`;
-      Object.entries(byPart).sort().forEach(([p, c]) => { result += `  • ${p}: ${c}\n`; });
+      let result = `${columnOk ? 'âœ…' : 'âŒ'} source column: ${columnOk ? 'EXISTS' : 'MISSING â€” run the SQL fix below!'}\n`;
+      result += `âœ… Supabase Total Rows: ${total}\n`;
+      result += `âœ… Synced to App: ${freshQs.length} questions\n\n`;
+      result += `ðŸ“Š By Source:\n`;
+      Object.entries(bySource).sort().forEach(([s, c]) => { result += `  â€¢ ${s}: ${c}\n`; });
+      result += `\nðŸ“‹ By Part:\n`;
+      Object.entries(byPart).sort().forEach(([p, c]) => { result += `  â€¢ ${p}: ${c}\n`; });
       if (nullSource > 0) {
-        result += `\n⚠️ ${nullSource} questions have NO source — use "Patch → MRCP" button below`;
+        result += `\nâš ï¸ ${nullSource} questions have NO source â€” use "Patch â†’ MRCP" button below`;
       } else {
-        result += `\n✅ All questions have a source assigned`;
+        result += `\nâœ… All questions have a source assigned`;
       }
       setDiagResult(result);
     } catch (err: any) {
-      setDiagResult(`❌ Diagnostics failed: ${err.message ?? err}`);
+      setDiagResult(`âŒ Diagnostics failed: ${err.message ?? err}`);
     } finally {
       setDiagLoading(false);
     }
   };
 
-  // ── Textbook state ────────────────────────────────────────────────────────
-  const [textbooks, setTextbooks] = useState<Textbook[]>(() => getTextbooks());
-  const [tbPart, setTbPart] = useState<'Part 1' | 'Part 2'>('Part 1');
-  const [tbTitle, setTbTitle] = useState('');
-  const [tbDesc, setTbDesc] = useState('');
-  const [tbUrl, setTbUrl] = useState('');
-  const [tbMsg, setTbMsg] = useState('');
-  const [tbDeleteConfirm, setTbDeleteConfirm] = useState<string | null>(null);
-
-  // ── One-liner state ───────────────────────────────────────────────────────
-  const [liners, setLiners] = useState<OneLiner[]>(() => getOneLiners());
-  const [olJson, setOlJson] = useState('');
-  const [olSource, setOlSource] = useState<OneLinerSource>('Passmedicine');
-  const [olMsg, setOlMsg] = useState('');
-  const [olError, setOlError] = useState('');
-  const [olClearConfirm, setOlClearConfirm] = useState<OneLinerSource | null>(null);
-  const [olFilterSource, setOlFilterSource] = useState<OneLinerSource>('Pastest');
-  const [olFilterPart, setOlFilterPart] = useState<OneLiner['part'] | 'Any'>('Part 1');
-  const [olFilterSystem, setOlFilterSystem] = useState<string>('Endocrinology');
-  const [olFilterConfirm, setOlFilterConfirm] = useState(false);
-  const [olFilterMsg, setOlFilterMsg] = useState('');
-
   const [forceUpsert, setForceUpsert] = useState(false);
-  const refresh = async () => { const qs = await syncFromSupabase(); setQuestions(qs); };
+  // Admin explicitly clicking refresh always gets fresh data from Supabase.
+  const refresh = async () => { invalidateSessionCache(); const qs = await syncFromSupabase(); setQuestions(qs); };
 
-  useEffect(() => { refresh(); }, []);
+  // On mount, respect the TTL cache â€” avoids a redundant Supabase fetch if data is fresh.
+  useEffect(() => { syncFromSupabase().then(setQuestions); }, []);
 
   // Derive systems for manual add based on selected part
   const manualSystems = newQ.part === 'Part 1' ? [...PART1_SYSTEMS] : [...PART2_SYSTEMS];
   const editSystems = editingQ?.part === 'Part 1' ? [...PART1_SYSTEMS] : [...PART2_SYSTEMS];
 
-  // ── JSON Upload ────────────────────────────────────────────
+  // â”€â”€ JSON Upload â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const validateAndImport = async (text: string, forcedSource?: QBankSource) => {
     setJsonError('');
     setJsonSuccess('');
@@ -205,7 +178,7 @@ export default function AdminPanel({ onDataChange }: { onDataChange?: () => void
     try {
       parsed = JSON.parse(text);
     } catch (e: any) {
-      setJsonError(`❌ JSON Parse Error: ${e.message}`);
+      setJsonError(`âŒ JSON Parse Error: ${e.message}`);
       return;
     }
 
@@ -217,11 +190,11 @@ export default function AdminPanel({ onDataChange }: { onDataChange?: () => void
       const prefix = `Q[${i + 1}]`;
       if (!item.id) errors.push(`${prefix}: missing "id"`);
       if (!item.part || !['Part 1', 'Part 2'].includes(item.part)) errors.push(`${prefix}: "part" must be "Part 1" or "Part 2"`);
-      if (!item.system || !SYSTEMS.includes(item.system)) errors.push(`${prefix}: invalid or missing "system" — must be one of the MRCP systems`);
+      if (!item.system || !SYSTEMS.includes(item.system)) errors.push(`${prefix}: invalid or missing "system" â€” must be one of the MRCP systems`);
       if (!item.stem) errors.push(`${prefix}: missing "stem"`);
       if (!Array.isArray(item.options) || item.options.length < 2) errors.push(`${prefix}: "options" must be an array of at least 2`);
       if (!item.correctAnswer) errors.push(`${prefix}: missing "correctAnswer"`);
-      // explanation optional — legacy questions may have none
+      // explanation optional â€” legacy questions may have none
       if (!['Easy', 'Medium', 'Hard'].includes(item.difficulty)) errors.push(`${prefix}: "difficulty" must be Easy, Medium, or Hard`);
 
       if (errors.filter((e) => e.startsWith(prefix)).length === 0) {
@@ -248,7 +221,7 @@ export default function AdminPanel({ onDataChange }: { onDataChange?: () => void
     });
 
     if (errors.length > 0) {
-      setJsonError('❌ Validation Errors:\n' + errors.join('\n'));
+      setJsonError('âŒ Validation Errors:\n' + errors.join('\n'));
       return;
     }
 
@@ -256,19 +229,19 @@ export default function AdminPanel({ onDataChange }: { onDataChange?: () => void
     const existingIds = new Set(questions.map((q) => q.id));
     const duplicates = validated.filter((q) => existingIds.has(q.id));
     if (duplicates.length > 0) {
-      setJsonError(`⚠️ Duplicate IDs found: ${duplicates.map((d) => d.id).join(', ')}. Please use unique IDs.`);
+      setJsonError(`âš ï¸ Duplicate IDs found: ${duplicates.map((d) => d.id).join(', ')}. Please use unique IDs.`);
       return;
     }
 
-    setJsonSuccess(`⏳ Importing ${validated.length} question(s) to Supabase...`);
+    setJsonSuccess(`â³ Importing ${validated.length} question(s) to Supabase...`);
     try {
       await addQuestionsToSupabase(validated);
       onDataChange?.();
       await refresh();
       setJsonText('');
-      setJsonSuccess(`✅ Successfully imported ${validated.length} question(s)!`);
+      setJsonSuccess(`âœ… Successfully imported ${validated.length} question(s)!`);
     } catch (err: any) {
-      setJsonError(`❌ Supabase import failed: ${err.message ?? err}`);
+      setJsonError(`âŒ Supabase import failed: ${err.message ?? err}`);
     }
   };
 
@@ -283,7 +256,7 @@ export default function AdminPanel({ onDataChange }: { onDataChange?: () => void
     reader.readAsText(file);
   };
 
-  // ── Manual Add ────────────────────────────────────────────
+  // â”€â”€ Manual Add â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const handleAddManual = () => {
     setNewQError('');
     setNewQSuccess('');
@@ -298,7 +271,7 @@ export default function AdminPanel({ onDataChange }: { onDataChange?: () => void
     addQuestionToSupabase(q).then(() => onDataChange?.());
     refresh();
     setNewQ({ ...EMPTY_Q, part: newQ.part }); // keep current part selection
-    setNewQSuccess('✅ Question added successfully!');
+    setNewQSuccess('âœ… Question added successfully!');
   };
 
   const handleDeleteQ = (id: string) => {
@@ -351,151 +324,20 @@ export default function AdminPanel({ onDataChange }: { onDataChange?: () => void
   const passmedicineCount = pm1Count + pm2Count;
   const pastestCount = pt1Count + pt2Count;
 
-  // ── Textbook handlers ────────────────────────────────────────────────────
-  const handleAddTextbook = () => {
-    setTbMsg('');
-    if (!tbTitle.trim()) { setTbMsg('❌ Title is required.'); return; }
-    if (!tbUrl.trim() || !tbUrl.startsWith('http')) { setTbMsg('❌ A valid PDF URL is required.'); return; }
-    const tb: Textbook = {
-      id: generateTextbookId(),
-      source: 'Passmedicine',
-      part: tbPart,
-      title: tbTitle.trim(),
-      description: tbDesc.trim() || undefined,
-      pdfUrl: tbUrl.trim(),
-      uploadedAt: new Date().toISOString(),
-    };
-    saveTextbook(tb);
-    setTextbooks(getTextbooks());
-    setTbTitle(''); setTbDesc(''); setTbUrl('');
-    setTbMsg(`✅ Textbook "${tb.title}" added for Passmedicine ${tbPart}.`);
-  };
-
-  const handleDeleteTextbook = (id: string) => {
-    deleteTextbook(id);
-    setTextbooks(getTextbooks());
-    setTbDeleteConfirm(null);
-  };
-
-  // ── One-liner handlers ────────────────────────────────────────────────────
-  const [olSyncing, setOlSyncing] = useState(false);
-
-  const handleOneLinerImport = async () => {
-    setOlMsg(''); setOlError('');
-    if (!olJson.trim()) { setOlError('❌ JSON input is empty.'); return; }
-    let parsed: any;
-    try { parsed = JSON.parse(olJson); }
-    catch (e: any) { setOlError(`❌ JSON Parse Error: ${e.message}`); return; }
-    const arr: any[] = Array.isArray(parsed) ? parsed : [parsed];
-    const errors: string[] = [];
-    const validated: OneLiner[] = [];
-    arr.forEach((item, i) => {
-      const p = `[${i+1}]`;
-      if (!item.id) errors.push(`${p}: missing "id"`);
-      if (!item.content) errors.push(`${p}: missing "content"`);
-      if (!item.system) errors.push(`${p}: missing "system"`);
-      if (errors.filter(e => e.startsWith(p)).length === 0) {
-        // Namespace id with BOTH source and system so pearls never collide
-        // on Supabase's id PK — covers two collision cases:
-        //   (a) Passmedicine "ol_001" vs Pastest "ol_001" (different sources)
-        //   (b) Pastest Cardiology "ol_001" vs Pastest Dermatology "ol_001"
-        //       (same source, different systems both numbering from 1)
-        validated.push({
-          id: namespaceOneLinerId(olSource, item.system, String(item.id)),
-          source: olSource,
-          part: ['Part 1','Part 2','Both'].includes(item.part) ? item.part : 'Both',
-          system: item.system,
-          topic: item.topic ?? undefined,
-          content: item.content,
-          explanation: item.explanation ?? undefined,
-          tags: Array.isArray(item.tags) ? item.tags : [],
-        });
-      }
-    });
-    if (errors.length > 0) { setOlError('❌ Validation Errors:\n' + errors.join('\n')); return; }
-    const result = bulkAddOneLiners(validated);
-    const all = getOneLiners();
-    setLiners(all);
-    setOlJson('');
-    setOlMsg(`✅ Saved to local: ${result.added} new · ${result.updated} updated. Syncing ${all.length} total to Supabase…`);
-    // Push the ENTIRE local collection so Supabase always has everything,
-    // not just the newly imported batch.
-    setOlSyncing(true);
-    const push = await pushOneLinersToSupabase(all);
-    setOlSyncing(false);
-    if (push.ok) {
-      setOlMsg(`✅ ${result.added} new · ${result.updated} updated · ${all.length} total — all synced to Supabase ✓`);
-    } else {
-      setOlMsg(`⚠️ Saved locally (${all.length} total) but Supabase sync failed: ${push.error}. Run "Push all to Supabase" manually.`);
-    }
-  };
-
-  const handlePushAllToSupabase = async () => {
-    setOlSyncing(true);
-    setOlMsg('Pushing all one-liners to Supabase…');
-    const all = getOneLiners();
-    const push = await pushOneLinersToSupabase(all);
-    setOlSyncing(false);
-    if (push.ok) {
-      setOlMsg(`✅ Successfully pushed ${all.length} one-liners to Supabase. All devices will now see them.`);
-    } else {
-      setOlError(`❌ Supabase push failed: ${push.error}`);
-      setOlMsg('');
-    }
-  };
-
-  const handleMigrateLegacyIds = async () => {
-    setOlSyncing(true);
-    setOlMsg('Upgrading legacy IDs in Supabase…');
-    setOlError('');
-    const result = await migrateLegacyBareIds();
-    if (result.error) {
-      setOlError(`❌ Migration failed: ${result.error}`);
-      setOlMsg('');
-      setOlSyncing(false);
-      return;
-    }
-    // Reload local list (cache was invalidated by migration).
-    setLiners(getOneLiners());
-    setOlSyncing(false);
-    if (result.migrated === 0) {
-      setOlMsg('✅ No legacy IDs found — every pearl is already namespaced.');
-    } else {
-      setOlMsg(`✅ Upgraded ${result.migrated} legacy pearl IDs. Re-uploading the same JSON will now update them in place instead of duplicating.`);
-    }
-  };
-
-  const handleDeleteByFilter = async () => {
-    setOlFilterMsg('');
-    setOlSyncing(true);
-    const part = olFilterPart === 'Any' ? undefined : olFilterPart;
-    const system = olFilterSystem === 'Any' ? undefined : olFilterSystem;
-    const result = await deleteOneLinersByFilter(olFilterSource, part, system);
-    setLiners(getOneLiners());
-    setOlSyncing(false);
-    setOlFilterConfirm(false);
-    if (result.error) {
-      setOlFilterMsg(`⚠️ Removed ${result.removed} locally but Supabase delete failed: ${result.error}`);
-    } else {
-      setOlFilterMsg(`✅ Deleted ${result.removed} one-liners from Supabase and local. ${getOneLiners().length} remain.`);
-    }
-  };
 
   const tabs: { id: AdminTab; label: string; icon: string }[] = [
-    { id: 'upload-mrcp1', label: 'MRCP Part 1',  icon: '📘' },
-    { id: 'upload-mrcp2', label: 'MRCP Part 2',  icon: '📗' },
-    { id: 'upload-pm1',   label: 'PM Part 1',    icon: '🟣' },
-    { id: 'upload-pm2',   label: 'PM Part 2',    icon: '🟣' },
-    { id: 'upload-pt1',   label: 'PT Part 1',    icon: '🟢' },
-    { id: 'upload-pt2',   label: 'PT Part 2',    icon: '🟢' },
-    { id: 'upload-custom',label: 'Custom Upload', icon: '⚙️' },
-    { id: 'textbooks',    label: 'Textbooks',    icon: '📚' },
-    { id: 'oneliners',    label: 'One-Liners',   icon: '💡' },
-    { id: 'manage',       label: 'Manage',       icon: '📋' },
-    { id: 'manual',       label: 'Add Manually', icon: '✏️' },
-    { id: 'template',     label: 'Template',     icon: '📄' },
-    { id: 'diagnostics',  label: 'Diagnostics',  icon: '🔬' },
-    { id: 'users',        label: 'Users',        icon: '👥' },
+    { id: 'upload-mrcp1', label: 'MRCP Part 1',  icon: 'ðŸ“˜' },
+    { id: 'upload-mrcp2', label: 'MRCP Part 2',  icon: 'ðŸ“—' },
+    { id: 'upload-pm1',   label: 'PM Part 1',    icon: 'ðŸŸ£' },
+    { id: 'upload-pm2',   label: 'PM Part 2',    icon: 'ðŸŸ£' },
+    { id: 'upload-pt1',   label: 'PT Part 1',    icon: 'ðŸŸ¢' },
+    { id: 'upload-pt2',   label: 'PT Part 2',    icon: 'ðŸŸ¢' },
+    { id: 'upload-custom',label: 'Custom Upload', icon: 'âš™ï¸' },
+    { id: 'manage',       label: 'Manage',       icon: 'ðŸ“‹' },
+    { id: 'manual',       label: 'Add Manually', icon: 'âœï¸' },
+    { id: 'template',     label: 'Template',     icon: 'ðŸ“„' },
+    { id: 'diagnostics',  label: 'Diagnostics',  icon: 'ðŸ”¬' },
+    { id: 'users',        label: 'Users',        icon: 'ðŸ‘¥' },
   ];
 
   return (
@@ -516,13 +358,13 @@ export default function AdminPanel({ onDataChange }: { onDataChange?: () => void
                 onClick={handleExport}
                 className="bg-white/20 hover:bg-white/30 border border-white/30 backdrop-blur text-white px-4 py-2 rounded-xl text-sm font-semibold transition"
               >
-                ⬇️ Export JSON
+                â¬‡ï¸ Export JSON
               </button>
               <button
                 onClick={() => setClearConfirm(true)}
                 className="bg-red-500/80 hover:bg-red-500 border border-red-400/30 text-white px-4 py-2 rounded-xl text-sm font-semibold transition"
               >
-                🗑️ Clear All Data
+                ðŸ—‘ï¸ Clear All Data
               </button>
             </div>
           </div>
@@ -530,16 +372,14 @@ export default function AdminPanel({ onDataChange }: { onDataChange?: () => void
           {/* Stats breakdown */}
           <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-10 gap-2 mt-6">
             {[
-              { label: 'Total Qs',     value: questions.length,  icon: '📝' },
-              { label: 'MRCP P1',      value: part1Count,        icon: '📘' },
-              { label: 'MRCP P2',      value: part2Count,        icon: '📗' },
-              { label: 'PM Part 1',    value: pm1Count,          icon: '🟣' },
-              { label: 'PM Part 2',    value: pm2Count,          icon: '🟣' },
-              { label: 'PT Part 1',    value: pt1Count,          icon: '🟢' },
-              { label: 'PT Part 2',    value: pt2Count,          icon: '🟢' },
-              { label: 'Systems',      value: new Set(questions.map(q => q.system)).size, icon: '🗂️' },
-              { label: 'Textbooks',    value: textbooks.length,  icon: '📚' },
-              { label: 'One-Liners',   value: liners.length,     icon: '💡' },
+              { label: 'Total Qs',     value: questions.length,  icon: 'ðŸ“' },
+              { label: 'MRCP P1',      value: part1Count,        icon: 'ðŸ“˜' },
+              { label: 'MRCP P2',      value: part2Count,        icon: 'ðŸ“—' },
+              { label: 'PM Part 1',    value: pm1Count,          icon: 'ðŸŸ£' },
+              { label: 'PM Part 2',    value: pm2Count,          icon: 'ðŸŸ£' },
+              { label: 'PT Part 1',    value: pt1Count,          icon: 'ðŸŸ¢' },
+              { label: 'PT Part 2',    value: pt2Count,          icon: 'ðŸŸ¢' },
+              { label: 'Systems',      value: new Set(questions.map(q => q.system)).size, icon: 'ðŸ—‚ï¸' },
             ].map((s) => (
               <div key={s.label} className="bg-white/10 backdrop-blur rounded-xl p-3 text-center border border-white/20">
                 <div className="text-xl mb-1">{s.icon}</div>
@@ -575,11 +415,11 @@ export default function AdminPanel({ onDataChange }: { onDataChange?: () => void
 
       <div className="max-w-6xl mx-auto px-4 py-8">
 
-        {/* ── MRCP PART 1 & PART 2 UPLOAD TABS ── */}
+        {/* â”€â”€ MRCP PART 1 & PART 2 UPLOAD TABS â”€â”€ */}
         {(tab === 'upload-mrcp1' || tab === 'upload-mrcp2') && (() => {
           const isPart1 = tab === 'upload-mrcp1';
           const partLabel = isPart1 ? 'Part 1' : 'Part 2';
-          const partIcon = isPart1 ? '📘' : '📗';
+          const partIcon = isPart1 ? 'ðŸ“˜' : 'ðŸ“—';
           const color = isPart1 ? 'bg-blue-600 hover:bg-blue-700' : 'bg-emerald-600 hover:bg-emerald-700';
           const border = isPart1 ? 'border-blue-400' : 'border-emerald-400';
           const ring = isPart1 ? 'focus:ring-blue-500' : 'focus:ring-emerald-500';
@@ -592,7 +432,7 @@ export default function AdminPanel({ onDataChange }: { onDataChange?: () => void
             if (!jsonText.trim()) { setJsonError('JSON input is empty.'); return; }
             let parsed: any;
             try { parsed = JSON.parse(jsonText); }
-            catch (e: any) { setJsonError(`❌ JSON Parse Error: ${e.message}`); return; }
+            catch (e: any) { setJsonError(`âŒ JSON Parse Error: ${e.message}`); return; }
 
             const arr: any[] = Array.isArray(parsed) ? parsed : [parsed];
             const errors: string[] = [];
@@ -605,7 +445,7 @@ export default function AdminPanel({ onDataChange }: { onDataChange?: () => void
               if (!item.stem) errors.push(`${prefix}: missing "stem"`);
               if (!Array.isArray(item.options) || item.options.length < 2) errors.push(`${prefix}: "options" must be an array of at least 2`);
               if (!item.correctAnswer) errors.push(`${prefix}: missing "correctAnswer"`);
-              // explanation optional — legacy questions may have none
+              // explanation optional â€” legacy questions may have none
               if (!['Easy', 'Medium', 'Hard'].includes(item.difficulty)) errors.push(`${prefix}: "difficulty" must be Easy, Medium, or Hard`);
               if (errors.filter((e) => e.startsWith(prefix)).length === 0) {
                 validated.push({
@@ -629,14 +469,14 @@ export default function AdminPanel({ onDataChange }: { onDataChange?: () => void
               }
             });
 
-            if (errors.length > 0) { setJsonError('❌ Validation Errors:\n' + errors.join('\n')); return; }
+            if (errors.length > 0) { setJsonError('âŒ Validation Errors:\n' + errors.join('\n')); return; }
 
             if (!forceUpsert) {
               const existingIds = new Set(questions.map((q) => q.id));
               const duplicates = validated.filter((q) => existingIds.has(q.id));
               if (duplicates.length > 0) {
                 setJsonError(
-                  `⚠️ ${duplicates.length} question(s) already exist in the database.\n\n` +
+                  `âš ï¸ ${duplicates.length} question(s) already exist in the database.\n\n` +
                   `Tick "Force Update" to overwrite them with the new data (useful for reformatting explanations).`
                 );
                 return;
@@ -647,8 +487,8 @@ export default function AdminPanel({ onDataChange }: { onDataChange?: () => void
             const newCount      = validated.filter((q) => !existingIds2.has(q.id)).length;
             const updateCount   = validated.length - newCount;
             const action        = forceUpsert && updateCount > 0
-              ? `⏳ Upserting ${validated.length} MRCP ${partLabel} questions (${newCount} new, ${updateCount} updates)…`
-              : `⏳ Uploading ${validated.length} MRCP ${partLabel} questions to Supabase…`;
+              ? `â³ Upserting ${validated.length} MRCP ${partLabel} questions (${newCount} new, ${updateCount} updates)â€¦`
+              : `â³ Uploading ${validated.length} MRCP ${partLabel} questions to Supabaseâ€¦`;
 
             setJsonSuccess(action);
             try {
@@ -658,11 +498,11 @@ export default function AdminPanel({ onDataChange }: { onDataChange?: () => void
               onDataChange?.();
               setJsonText('');
               setJsonSuccess(
-                `✅ ${forceUpsert && updateCount > 0 ? `Updated ${updateCount} + added ${newCount}` : `Uploaded ${validated.length}`} MRCP ${partLabel} question(s)!\n` +
-                `🔍 Verified: Supabase now has ${verifiedCount} total MRCP ${partLabel} question(s).`
+                `âœ… ${forceUpsert && updateCount > 0 ? `Updated ${updateCount} + added ${newCount}` : `Uploaded ${validated.length}`} MRCP ${partLabel} question(s)!\n` +
+                `ðŸ” Verified: Supabase now has ${verifiedCount} total MRCP ${partLabel} question(s).`
               );
             } catch (err: any) {
-              setJsonError(`❌ Supabase upload failed: ${err.message ?? String(err)}`);
+              setJsonError(`âŒ Supabase upload failed: ${err.message ?? String(err)}`);
             }
           };
 
@@ -734,7 +574,7 @@ export default function AdminPanel({ onDataChange }: { onDataChange?: () => void
                   <div>
                     <span className="font-semibold text-gray-700 text-sm">Force Update (Upsert)</span>
                     <p className="text-xs text-gray-400 mt-0.5">
-                      Allow overwriting questions that already exist — use this when re-uploading reformatted explanations
+                      Allow overwriting questions that already exist â€” use this when re-uploading reformatted explanations
                     </p>
                   </div>
                 </label>
@@ -752,21 +592,21 @@ export default function AdminPanel({ onDataChange }: { onDataChange?: () => void
 
               {/* Import Rules */}
               <div className={`${isPart1 ? 'bg-blue-50 border-blue-200' : 'bg-emerald-50 border-emerald-200'} border rounded-2xl p-6`}>
-                <h3 className={`font-bold mb-3 ${isPart1 ? 'text-blue-900' : 'text-emerald-900'}`}>📋 MRCP {partLabel} Import Rules</h3>
+                <h3 className={`font-bold mb-3 ${isPart1 ? 'text-blue-900' : 'text-emerald-900'}`}>ðŸ“‹ MRCP {partLabel} Import Rules</h3>
                 <ul className={`space-y-2 text-sm ${isPart1 ? 'text-blue-800' : 'text-emerald-800'}`}>
-                  <li className="flex items-start gap-2"><span className="font-bold mt-0.5">•</span> <code className="bg-white/60 px-1 rounded">part</code> is <strong>auto-set to "{partLabel}"</strong> — no need to include</li>
-                  <li className="flex items-start gap-2"><span className="font-bold mt-0.5">•</span> <code className="bg-white/60 px-1 rounded">source</code> is auto-set to "Custom" (MRCP native)</li>
-                  <li className="flex items-start gap-2"><span className="font-bold mt-0.5">•</span> <code className="bg-white/60 px-1 rounded">system</code> must match one of the valid MRCP {partLabel} systems</li>
-                  <li className="flex items-start gap-2"><span className="font-bold mt-0.5">•</span> <code className="bg-white/60 px-1 rounded">difficulty</code> must be "Easy", "Medium", or "Hard"</li>
-                  <li className="flex items-start gap-2"><span className="font-bold mt-0.5">•</span> <code className="bg-white/60 px-1 rounded">options</code> — array with {`{ id, text }`} (A–E)</li>
-                  <li className="flex items-start gap-2"><span className="font-bold mt-0.5">•</span> Optional: <code className="bg-white/60 px-1 rounded">topic</code>, <code className="bg-white/60 px-1 rounded">year</code>, <code className="bg-white/60 px-1 rounded">reference</code>, <code className="bg-white/60 px-1 rounded">tags</code>, <code className="bg-white/60 px-1 rounded">imageUrl</code></li>
+                  <li className="flex items-start gap-2"><span className="font-bold mt-0.5">â€¢</span> <code className="bg-white/60 px-1 rounded">part</code> is <strong>auto-set to "{partLabel}"</strong> â€” no need to include</li>
+                  <li className="flex items-start gap-2"><span className="font-bold mt-0.5">â€¢</span> <code className="bg-white/60 px-1 rounded">source</code> is auto-set to "Custom" (MRCP native)</li>
+                  <li className="flex items-start gap-2"><span className="font-bold mt-0.5">â€¢</span> <code className="bg-white/60 px-1 rounded">system</code> must match one of the valid MRCP {partLabel} systems</li>
+                  <li className="flex items-start gap-2"><span className="font-bold mt-0.5">â€¢</span> <code className="bg-white/60 px-1 rounded">difficulty</code> must be "Easy", "Medium", or "Hard"</li>
+                  <li className="flex items-start gap-2"><span className="font-bold mt-0.5">â€¢</span> <code className="bg-white/60 px-1 rounded">options</code> â€” array with {`{ id, text }`} (Aâ€“E)</li>
+                  <li className="flex items-start gap-2"><span className="font-bold mt-0.5">â€¢</span> Optional: <code className="bg-white/60 px-1 rounded">topic</code>, <code className="bg-white/60 px-1 rounded">year</code>, <code className="bg-white/60 px-1 rounded">reference</code>, <code className="bg-white/60 px-1 rounded">tags</code>, <code className="bg-white/60 px-1 rounded">imageUrl</code></li>
                 </ul>
               </div>
             </div>
           );
         })()}
 
-        {/* ── PM/PT PART-SPECIFIC UPLOAD TABS ── */}
+        {/* â”€â”€ PM/PT PART-SPECIFIC UPLOAD TABS â”€â”€ */}
         {(tab === 'upload-pm1' || tab === 'upload-pm2' || tab === 'upload-pt1' || tab === 'upload-pt2') && (() => {
           const isPM = tab === 'upload-pm1' || tab === 'upload-pm2';
           const isPart1 = tab === 'upload-pm1' || tab === 'upload-pt1';
@@ -776,14 +616,14 @@ export default function AdminPanel({ onDataChange }: { onDataChange?: () => void
           const srcBorder = isPM ? 'border-violet-400' : 'border-teal-400';
           const srcRing = isPM ? 'focus:ring-violet-500' : 'focus:ring-teal-500';
           const srcBadge = isPM ? 'bg-violet-100 text-violet-700' : 'bg-teal-100 text-teal-700';
-          const srcIcon = isPM ? '🟣' : '🟢';
-          const partIcon = isPart1 ? '📘' : '📗';
+          const srcIcon = isPM ? 'ðŸŸ£' : 'ðŸŸ¢';
+          const partIcon = isPart1 ? 'ðŸ“˜' : 'ðŸ“—';
           const handleImport = async () => {
             setJsonError(''); setJsonSuccess('');
             if (!jsonText.trim()) { setJsonError('JSON input is empty.'); return; }
             let parsed: any;
             try { parsed = JSON.parse(jsonText); }
-            catch (e: any) { setJsonError(`❌ JSON Parse Error: ${e.message}`); return; }
+            catch (e: any) { setJsonError(`âŒ JSON Parse Error: ${e.message}`); return; }
             const arr: any[] = Array.isArray(parsed) ? parsed : [parsed];
             const errors: string[] = [];
             const validated: Question[] = [];
@@ -794,7 +634,7 @@ export default function AdminPanel({ onDataChange }: { onDataChange?: () => void
               if (!item.stem) errors.push(`${prefix}: missing "stem"`);
               if (!Array.isArray(item.options) || item.options.length < 2) errors.push(`${prefix}: "options" must be an array of at least 2`);
               if (!item.correctAnswer) errors.push(`${prefix}: missing "correctAnswer"`);
-              // explanation optional — legacy questions may have none
+              // explanation optional â€” legacy questions may have none
               if (!['Easy', 'Medium', 'Hard'].includes(item.difficulty)) errors.push(`${prefix}: "difficulty" must be Easy, Medium, or Hard`);
               if (errors.filter((e) => e.startsWith(prefix)).length === 0) {
                 validated.push({
@@ -808,11 +648,11 @@ export default function AdminPanel({ onDataChange }: { onDataChange?: () => void
                 });
               }
             });
-            if (errors.length > 0) { setJsonError('❌ Validation Errors:\n' + errors.join('\n')); return; }
+            if (errors.length > 0) { setJsonError('âŒ Validation Errors:\n' + errors.join('\n')); return; }
             const existingIds = new Set(questions.map((q) => q.id));
             const duplicates = validated.filter((q) => existingIds.has(q.id));
-            if (duplicates.length > 0) { setJsonError(`⚠️ Duplicate IDs: ${duplicates.map((d) => d.id).join(', ')}`); return; }
-            setJsonSuccess(`⏳ Uploading ${validated.length} ${forcedSource} ${forcedPart} questions to Supabase…`);
+            if (duplicates.length > 0) { setJsonError(`âš ï¸ Duplicate IDs: ${duplicates.map((d) => d.id).join(', ')}`); return; }
+            setJsonSuccess(`â³ Uploading ${validated.length} ${forcedSource} ${forcedPart} questions to Supabaseâ€¦`);
             try {
               await addQuestionsToSupabase(validated);
               // Verify: count matching rows in Supabase
@@ -821,11 +661,11 @@ export default function AdminPanel({ onDataChange }: { onDataChange?: () => void
               onDataChange?.();
               setJsonText('');
               setJsonSuccess(
-                `✅ Uploaded ${validated.length} question(s) to Supabase!\n` +
-                `🔍 Verified: Supabase now has ${verifiedCount} total ${forcedSource} ${forcedPart} question(s).`
+                `âœ… Uploaded ${validated.length} question(s) to Supabase!\n` +
+                `ðŸ” Verified: Supabase now has ${verifiedCount} total ${forcedSource} ${forcedPart} question(s).`
               );
             } catch (err: any) {
-              setJsonError(`❌ Supabase upload failed: ${err.message ?? String(err)}\n\nCheck the Admin Panel → Diagnostics tab for details.`);
+              setJsonError(`âŒ Supabase upload failed: ${err.message ?? String(err)}\n\nCheck the Admin Panel â†’ Diagnostics tab for details.`);
             }
           };
           return (
@@ -835,7 +675,7 @@ export default function AdminPanel({ onDataChange }: { onDataChange?: () => void
                   <span className="text-2xl">{srcIcon}</span>
                   <span className="text-2xl">{partIcon}</span>
                   <h2 className="text-xl font-bold text-gray-800">Upload {forcedSource} {forcedPart} Questions</h2>
-                  <span className={`text-xs font-bold px-3 py-1 rounded-full ${srcBadge}`}>{forcedSource} · {forcedPart}</span>
+                  <span className={`text-xs font-bold px-3 py-1 rounded-full ${srcBadge}`}>{forcedSource} Â· {forcedPart}</span>
                 </div>
                 <p className="text-gray-500 text-sm mb-4">
                   All questions will be tagged as <strong>{forcedSource}</strong>, <strong>{forcedPart}</strong> automatically.
@@ -848,7 +688,7 @@ export default function AdminPanel({ onDataChange }: { onDataChange?: () => void
                   <input ref={fileRef} type="file" accept=".json,application/json" onChange={handleFileUpload} className="hidden" />
                 </div>
                 <textarea value={jsonText} onChange={(e) => { setJsonText(e.target.value); setJsonError(''); setJsonSuccess(''); }}
-                  placeholder={`Paste ${forcedSource} ${forcedPart} JSON here...\nNote: "part" and "source" are auto-set — no need to include them.`}
+                  placeholder={`Paste ${forcedSource} ${forcedPart} JSON here...\nNote: "part" and "source" are auto-set â€” no need to include them.`}
                   rows={12} className={`w-full border border-gray-300 rounded-xl p-4 font-mono text-sm focus:outline-none focus:ring-2 ${srcRing} resize-y bg-gray-50`} />
                 {jsonError && <div className="mt-4 bg-red-50 border border-red-200 rounded-xl p-4"><pre className="text-red-600 text-xs whitespace-pre-wrap">{jsonError}</pre></div>}
                 {jsonSuccess && <div className="mt-4 bg-green-50 border border-green-200 rounded-xl p-4 text-green-700 font-semibold">{jsonSuccess}</div>}
@@ -864,7 +704,7 @@ export default function AdminPanel({ onDataChange }: { onDataChange?: () => void
           );
         })()}
 
-        {/* ── QBANK UPLOAD TABS (Custom only now) ── */}
+        {/* â”€â”€ QBANK UPLOAD TABS (Custom only now) â”€â”€ */}
         {(tab === 'upload-custom') && (() => {
           const sourceMap: Record<string, { source: QBankSource; color: string; border: string; ring: string; badge: string; desc: string }> = {
             'upload-custom': {
@@ -887,14 +727,14 @@ export default function AdminPanel({ onDataChange }: { onDataChange?: () => void
                 </div>
                 <p className="text-gray-500 text-sm mb-4">{cfg.desc}</p>
                 <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-4 flex items-start gap-2">
-                  <span className="text-amber-500 text-lg">⚠️</span>
+                  <span className="text-amber-500 text-lg">âš ï¸</span>
                   <div className="text-sm text-amber-800">
                     <strong>Important:</strong> Each question must have a <code className="bg-amber-100 px-1 rounded">part</code> field set to either <strong>"Part 1"</strong> or <strong>"Part 2"</strong>.
                   </div>
                 </div>
                 <div onClick={() => fileRef.current?.click()}
                   className={`border-2 border-dashed ${cfg.border} hover:opacity-80 rounded-2xl p-8 text-center cursor-pointer transition mb-4 group`}>
-                  <div className="text-4xl mb-2 group-hover:scale-110 transition-transform">📁</div>
+                  <div className="text-4xl mb-2 group-hover:scale-110 transition-transform">ðŸ“</div>
                   <div className="text-gray-700 font-semibold">Click to upload {cfg.source} JSON file</div>
                   <div className="text-gray-400 text-sm mt-1">or paste JSON below</div>
                   <input ref={fileRef} type="file" accept=".json,application/json" onChange={handleFileUpload} className="hidden" />
@@ -907,7 +747,7 @@ export default function AdminPanel({ onDataChange }: { onDataChange?: () => void
                 <div className="flex gap-3 mt-4">
                   <button onClick={() => validateAndImport(jsonText, cfg.source)}
                     className={`${cfg.color} text-white px-6 py-3 rounded-xl font-bold transition shadow`}>
-                    ✅ Validate & Import as {cfg.source}
+                    âœ… Validate & Import as {cfg.source}
                   </button>
                   <button onClick={() => { setJsonText(''); setJsonError(''); setJsonSuccess(''); }}
                     className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-6 py-3 rounded-xl font-semibold transition">Clear</button>
@@ -917,7 +757,7 @@ export default function AdminPanel({ onDataChange }: { onDataChange?: () => void
           );
         })()}
 
-        {/* ── OLD PASSMEDICINE/PASTEST STUB (kept for any leftover rendering) ── */}
+        {/* â”€â”€ OLD PASSMEDICINE/PASTEST STUB (kept for any leftover rendering) â”€â”€ */}
         {false && (tab === 'upload-passmedicine' || tab === 'upload-pastest') && (() => {
           const sourceMap: Record<string, { source: QBankSource; color: string; border: string; ring: string; badge: string; desc: string }> = {
             'upload-passmedicine': {
@@ -958,7 +798,7 @@ export default function AdminPanel({ onDataChange }: { onDataChange?: () => void
 
                 {/* Part reminder */}
                 <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-4 flex items-start gap-2">
-                  <span className="text-amber-500 text-lg">⚠️</span>
+                  <span className="text-amber-500 text-lg">âš ï¸</span>
                   <div className="text-sm text-amber-800">
                     <strong>Important:</strong> Each question must have a <code className="bg-amber-100 px-1 rounded">part</code> field set to either <strong>"Part 1"</strong> or <strong>"Part 2"</strong>.
                     Part 1 supports Biostatistics; Part 2 does not.
@@ -970,7 +810,7 @@ export default function AdminPanel({ onDataChange }: { onDataChange?: () => void
                   onClick={() => fileRef.current?.click()}
                   className={`border-2 border-dashed ${cfg.border} hover:opacity-80 rounded-2xl p-8 text-center cursor-pointer transition mb-4 group`}
                 >
-                  <div className="text-4xl mb-2 group-hover:scale-110 transition-transform">📁</div>
+                  <div className="text-4xl mb-2 group-hover:scale-110 transition-transform">ðŸ“</div>
                   <div className="text-gray-700 font-semibold">Click to upload {cfg.source} JSON file</div>
                   <div className="text-gray-400 text-sm mt-1">or paste JSON below</div>
                   <input
@@ -1013,7 +853,7 @@ export default function AdminPanel({ onDataChange }: { onDataChange?: () => void
                     onClick={() => validateAndImport(jsonText, cfg.source)}
                     className={`${cfg.color} text-white px-6 py-3 rounded-xl font-bold transition shadow`}
                   >
-                    ✅ Validate & Import as {cfg.source}
+                    âœ… Validate & Import as {cfg.source}
                   </button>
                   <button
                     onClick={() => { setJsonText(''); setJsonError(''); setJsonSuccess(''); }}
@@ -1026,287 +866,24 @@ export default function AdminPanel({ onDataChange }: { onDataChange?: () => void
 
               {/* Import Rules */}
               <div className="bg-blue-50 border border-blue-200 rounded-2xl p-6">
-                <h3 className="font-bold text-blue-900 mb-3">📋 Import Rules & Validation</h3>
+                <h3 className="font-bold text-blue-900 mb-3">ðŸ“‹ Import Rules & Validation</h3>
                 <ul className="space-y-2 text-blue-800 text-sm">
-                  <li className="flex items-start gap-2"><span className="text-blue-500 font-bold mt-0.5">•</span> JSON must be an array <code className="bg-blue-100 px-1 rounded">[ ]</code> or a single object</li>
-                  <li className="flex items-start gap-2"><span className="text-blue-500 font-bold mt-0.5">•</span> Each question needs a unique <code className="bg-blue-100 px-1 rounded">id</code> — duplicates will be rejected</li>
-                  <li className="flex items-start gap-2"><span className="text-blue-500 font-bold mt-0.5">•</span> <code className="bg-blue-100 px-1 rounded">part</code> must be <strong>"Part 1"</strong> or <strong>"Part 2"</strong></li>
-                  <li className="flex items-start gap-2"><span className="text-blue-500 font-bold mt-0.5">•</span> <code className="bg-blue-100 px-1 rounded">system</code> must exactly match one of the valid MRCP systems</li>
-                  <li className="flex items-start gap-2"><span className="text-blue-500 font-bold mt-0.5">•</span> <code className="bg-blue-100 px-1 rounded">difficulty</code> must be "Easy", "Medium", or "Hard"</li>
-                  <li className="flex items-start gap-2"><span className="text-blue-500 font-bold mt-0.5">•</span> <code className="bg-blue-100 px-1 rounded">options</code> must be an array with <code className="bg-blue-100 px-1 rounded">{"{ id, text }"}</code></li>
-                  <li className="flex items-start gap-2"><span className="text-blue-500 font-bold mt-0.5">•</span> <code className="bg-blue-100 px-1 rounded">correctAnswer</code> must match one of the option ids (A–E)</li>
-                  <li className="flex items-start gap-2"><span className="text-blue-500 font-bold mt-0.5">•</span> Source is forced to <strong>{cfg.source}</strong> — no need to include it in JSON</li>
-                  <li className="flex items-start gap-2"><span className="text-blue-500 font-bold mt-0.5">•</span> Optional fields: <code className="bg-blue-100 px-1 rounded">topic</code>, <code className="bg-blue-100 px-1 rounded">year</code>, <code className="bg-blue-100 px-1 rounded">reference</code>, <code className="bg-blue-100 px-1 rounded">tags</code></li>
+                  <li className="flex items-start gap-2"><span className="text-blue-500 font-bold mt-0.5">â€¢</span> JSON must be an array <code className="bg-blue-100 px-1 rounded">[ ]</code> or a single object</li>
+                  <li className="flex items-start gap-2"><span className="text-blue-500 font-bold mt-0.5">â€¢</span> Each question needs a unique <code className="bg-blue-100 px-1 rounded">id</code> â€” duplicates will be rejected</li>
+                  <li className="flex items-start gap-2"><span className="text-blue-500 font-bold mt-0.5">â€¢</span> <code className="bg-blue-100 px-1 rounded">part</code> must be <strong>"Part 1"</strong> or <strong>"Part 2"</strong></li>
+                  <li className="flex items-start gap-2"><span className="text-blue-500 font-bold mt-0.5">â€¢</span> <code className="bg-blue-100 px-1 rounded">system</code> must exactly match one of the valid MRCP systems</li>
+                  <li className="flex items-start gap-2"><span className="text-blue-500 font-bold mt-0.5">â€¢</span> <code className="bg-blue-100 px-1 rounded">difficulty</code> must be "Easy", "Medium", or "Hard"</li>
+                  <li className="flex items-start gap-2"><span className="text-blue-500 font-bold mt-0.5">â€¢</span> <code className="bg-blue-100 px-1 rounded">options</code> must be an array with <code className="bg-blue-100 px-1 rounded">{"{ id, text }"}</code></li>
+                  <li className="flex items-start gap-2"><span className="text-blue-500 font-bold mt-0.5">â€¢</span> <code className="bg-blue-100 px-1 rounded">correctAnswer</code> must match one of the option ids (Aâ€“E)</li>
+                  <li className="flex items-start gap-2"><span className="text-blue-500 font-bold mt-0.5">â€¢</span> Source is forced to <strong>{cfg.source}</strong> â€” no need to include it in JSON</li>
+                  <li className="flex items-start gap-2"><span className="text-blue-500 font-bold mt-0.5">â€¢</span> Optional fields: <code className="bg-blue-100 px-1 rounded">topic</code>, <code className="bg-blue-100 px-1 rounded">year</code>, <code className="bg-blue-100 px-1 rounded">reference</code>, <code className="bg-blue-100 px-1 rounded">tags</code></li>
                 </ul>
               </div>
             </div>
           );
         })()}
 
-        {/* ── TEXTBOOKS TAB ── */}
-        {tab === 'textbooks' && (
-          <div className="space-y-6">
-            {/* Add Textbook Form */}
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-              <h2 className="text-xl font-bold text-gray-800 mb-4">📚 Add Passmedicine Textbook</h2>
-              <p className="text-gray-500 text-sm mb-5">
-                Paste a publicly accessible PDF URL (from Supabase Storage, Google Drive, OneDrive, etc.).
-                Students can read, annotate and take notes.
-              </p>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-1">MRCP Part *</label>
-                  <div className="flex gap-2">
-                    {(['Part 1', 'Part 2'] as const).map((p) => (
-                      <button key={p} onClick={() => setTbPart(p)}
-                        className={`flex-1 py-2.5 rounded-xl text-sm font-bold transition border-2 ${
-                          tbPart === p ? (p === 'Part 1' ? 'bg-blue-600 text-white border-blue-600' : 'bg-emerald-600 text-white border-emerald-600')
-                          : 'bg-gray-50 text-gray-600 border-gray-200 hover:border-violet-300'
-                        }`}>
-                        {p === 'Part 1' ? '📘' : '📗'} {p}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-1">Title *</label>
-                  <input type="text" value={tbTitle} onChange={(e) => setTbTitle(e.target.value)}
-                    placeholder="e.g. Passmedicine Complete MRCP Notes Part 1"
-                    className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500" />
-                </div>
-              </div>
-              <div className="mb-4">
-                <label className="block text-sm font-semibold text-gray-700 mb-1">PDF URL *</label>
-                <input type="url" value={tbUrl} onChange={(e) => setTbUrl(e.target.value)}
-                  placeholder="https://drive.google.com/file/d/xxx/view or https://supabase.co/storage/v1/..."
-                  className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500" />
-                <p className="text-xs text-gray-400 mt-1">💡 Google Drive: share → copy link. Make sure "Anyone with link can view" is enabled.</p>
-              </div>
-              <div className="mb-5">
-                <label className="block text-sm font-semibold text-gray-700 mb-1">Description (optional)</label>
-                <input type="text" value={tbDesc} onChange={(e) => setTbDesc(e.target.value)}
-                  placeholder="e.g. Comprehensive notes covering all Part 1 systems"
-                  className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500" />
-              </div>
-              {tbMsg && (
-                <div className={`mb-4 p-3 rounded-xl text-sm font-semibold ${tbMsg.startsWith('✅') ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
-                  {tbMsg}
-                </div>
-              )}
-              <button onClick={handleAddTextbook}
-                className="bg-violet-600 hover:bg-violet-700 text-white px-6 py-3 rounded-xl font-bold transition shadow">
-                📚 Add Textbook
-              </button>
-            </div>
-
-            {/* Textbook List */}
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-              <h3 className="font-bold text-gray-800 text-lg mb-4">Existing Textbooks ({textbooks.length})</h3>
-              {textbooks.length === 0 ? (
-                <div className="text-center py-12 text-gray-400">
-                  <div className="text-4xl mb-3">📚</div>
-                  <div className="font-semibold">No textbooks added yet</div>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {(['Part 1', 'Part 2'] as const).map((part) => {
-                    const partBooks = textbooks.filter((t) => t.part === part);
-                    if (partBooks.length === 0) return null;
-                    return (
-                      <div key={part}>
-                        <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">
-                          {part === 'Part 1' ? '📘' : '📗'} Passmedicine {part}
-                        </div>
-                        {partBooks.map((tb) => (
-                          <div key={tb.id} className="flex items-center justify-between p-4 border border-gray-100 rounded-xl hover:bg-gray-50 mb-2">
-                            <div className="flex-1 min-w-0">
-                              <div className="font-semibold text-gray-800 text-sm truncate">{tb.title}</div>
-                              {tb.description && <div className="text-xs text-gray-400 truncate">{tb.description}</div>}
-                              <div className="text-xs text-gray-300 mt-0.5 font-mono truncate">{tb.pdfUrl}</div>
-                            </div>
-                            <div className="flex gap-2 ml-3 flex-shrink-0">
-                              <a href={tb.pdfUrl} target="_blank" rel="noopener noreferrer"
-                                className="text-xs bg-violet-50 hover:bg-violet-100 text-violet-700 px-3 py-1.5 rounded-lg transition font-semibold">
-                                🔗 Open
-                              </a>
-                              <button onClick={() => setTbDeleteConfirm(tb.id)}
-                                className="text-xs bg-red-50 hover:bg-red-100 text-red-600 px-3 py-1.5 rounded-lg transition font-semibold">
-                                🗑️
-                              </button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* ── ONE-LINERS TAB ── */}
-        {tab === 'oneliners' && (
-          <div className="space-y-6">
-            {/* Import */}
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-              <h2 className="text-xl font-bold text-gray-800 mb-2">💡 Upload One-Liners / Clinical Pearls</h2>
-              <p className="text-gray-500 text-sm mb-4">
-                Import one-liners as a JSON array. Students can browse them in flashcard or list mode.
-              </p>
-
-              {/* Source selector */}
-              <div className="flex gap-2 mb-4">
-                {(['Passmedicine', 'Pastest'] as OneLinerSource[]).map((s) => (
-                  <button key={s} onClick={() => setOlSource(s)}
-                    className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition border-2 ${
-                      olSource === s
-                        ? s === 'Passmedicine' ? 'bg-violet-600 text-white border-violet-600' : 'bg-teal-600 text-white border-teal-600'
-                        : 'bg-gray-50 text-gray-600 border-gray-200 hover:border-violet-300'
-                    }`}>
-                    {s === 'Passmedicine' ? '🟣' : '🟢'} {s}
-                    <span className="text-xs font-bold bg-white/20 px-1.5 py-0.5 rounded-full">
-                      {liners.filter(l => l.source === s).length}
-                    </span>
-                  </button>
-                ))}
-              </div>
-
-              <div className="bg-gray-50 border border-gray-200 rounded-xl p-3 mb-4 text-xs text-gray-600">
-                <strong>JSON format:</strong><br/>
-                <code className="font-mono">{`[{ "id": "ol_001", "system": "Cardiology", "part": "Part 1", "content": "One-liner text...", "explanation": "Why?", "topic": "Heart Failure", "tags": ["HF"] }]`}</code><br/>
-                <span className="text-gray-400">• <code>part</code>: "Part 1" | "Part 2" | "Both" • <code>source</code> is auto-set to {olSource}</span>
-              </div>
-
-              <textarea value={olJson} onChange={(e) => { setOlJson(e.target.value); setOlMsg(''); setOlError(''); }}
-                placeholder={`Paste ${olSource} one-liners JSON here...`}
-                rows={12} className="w-full border border-gray-300 rounded-xl p-4 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-violet-500 resize-y bg-gray-50 mb-4" />
-
-              {olError && <div className="mb-4 p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-sm"><pre className="whitespace-pre-wrap text-xs">{olError}</pre></div>}
-              {olMsg && <div className="mb-4 p-3 rounded-xl bg-green-50 border border-green-200 text-green-700 text-sm font-semibold">{olMsg}</div>}
-
-              <div className="flex flex-wrap gap-3">
-                <button onClick={handleOneLinerImport} disabled={olSyncing}
-                  className={`${olSource === 'Passmedicine' ? 'bg-violet-600 hover:bg-violet-700' : 'bg-teal-600 hover:bg-teal-700'} text-white px-6 py-3 rounded-xl font-bold transition shadow disabled:opacity-60`}>
-                  {olSyncing ? '⏳ Syncing…' : `${olSource === 'Passmedicine' ? '🟣' : '🟢'} Import ${olSource} One-Liners`}
-                </button>
-                <button onClick={() => { setOlJson(''); setOlMsg(''); setOlError(''); }}
-                  className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-6 py-3 rounded-xl font-semibold transition">Clear</button>
-              </div>
-            </div>
-
-            {/* Summary & Clear */}
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-              <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
-                <h3 className="font-bold text-gray-800 text-lg">One-Liner Database ({liners.length} total)</h3>
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    onClick={handleMigrateLegacyIds}
-                    disabled={olSyncing}
-                    className="flex items-center gap-2 bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white px-4 py-2.5 rounded-xl font-bold text-sm transition shadow"
-                    title="One-time fix: rewrites any legacy pearls whose IDs aren't namespaced by source. Run this once if you previously imported pearls and saw the count drop after refresh."
-                  >
-                    {olSyncing ? '⏳ Working…' : '🔧 Fix legacy IDs'}
-                  </button>
-                  <button
-                    onClick={handlePushAllToSupabase}
-                    disabled={olSyncing || liners.length === 0}
-                    className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white px-4 py-2.5 rounded-xl font-bold text-sm transition shadow"
-                  >
-                    {olSyncing ? '⏳ Pushing…' : '☁️ Push all to Supabase'}
-                  </button>
-                </div>
-              </div>
-              <div className="mb-3 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-xl p-3">
-                ⚠️ <strong>If pearls disappeared after refresh:</strong> click <strong>"🔧 Fix legacy IDs"</strong> once — this re-stamps every row's ID with both <em>source</em> and <em>system</em> so two systems numbering from 1 (e.g. Cardiology &amp; Dermatology) can never overwrite each other. Then <strong>re-upload any system whose count dropped</strong> (the migration cannot recover already-overwritten rows). After that, <strong>"Push all to Supabase"</strong> syncs all {liners.length} pearls to the cloud.
-              </div>
-              <div className="grid grid-cols-2 gap-4 mb-5">
-                {(['Passmedicine', 'Pastest'] as OneLinerSource[]).map((s) => {
-                  const count = liners.filter(l => l.source === s).length;
-                  return (
-                    <div key={s} className={`p-4 rounded-xl border ${s === 'Passmedicine' ? 'bg-violet-50 border-violet-200' : 'bg-teal-50 border-teal-200'}`}>
-                      <div className="text-2xl font-extrabold mb-0.5">{count}</div>
-                      <div className="text-sm font-semibold text-gray-700">{s === 'Passmedicine' ? '🟣' : '🟢'} {s}</div>
-                      <button onClick={() => setOlClearConfirm(s)}
-                        className="mt-2 text-xs text-red-500 hover:text-red-700 font-semibold transition">
-                        🗑️ Clear all {s}
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-              {/* System breakdown */}
-              {liners.length > 0 && (() => {
-                const bySystem: Record<string, number> = {};
-                liners.forEach(l => { bySystem[l.system] = (bySystem[l.system] ?? 0) + 1; });
-                const entries = Object.entries(bySystem).sort((a, b) => b[1] - a[1]);
-                return (
-                  <div className="border-t border-gray-100 pt-4">
-                    <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">Breakdown by system</p>
-                    <div className="flex flex-wrap gap-2">
-                      {entries.map(([sys, n]) => (
-                        <span key={sys} className="text-xs bg-gray-100 text-gray-700 px-2.5 py-1 rounded-full font-medium">
-                          {sys}: <strong>{n}</strong>
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                );
-              })()}
-            </div>
-
-            {/* Targeted delete */}
-            <div className="bg-white rounded-2xl shadow-sm border border-red-100 p-6">
-              <h3 className="text-base font-bold text-gray-900 mb-1">Delete by Source / Part / System</h3>
-              <p className="text-xs text-gray-500 mb-4">Use this to remove a specific batch (e.g. Endocrinology Pastest Part 1) without touching the rest.</p>
-              {olFilterMsg && <div className={`mb-3 p-3 rounded-xl text-sm font-semibold border ${olFilterMsg.startsWith('✅') ? 'bg-green-50 border-green-200 text-green-700' : 'bg-yellow-50 border-yellow-200 text-yellow-800'}`}>{olFilterMsg}</div>}
-              <div className="flex flex-wrap gap-3 mb-4">
-                <div>
-                  <label className="block text-xs font-semibold text-gray-500 mb-1">Source</label>
-                  <select value={olFilterSource} onChange={e => setOlFilterSource(e.target.value as OneLinerSource)}
-                    className="border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-400">
-                    <option value="Passmedicine">🟣 Passmedicine</option>
-                    <option value="Pastest">🟢 Pastest</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-gray-500 mb-1">Part</label>
-                  <select value={olFilterPart} onChange={e => setOlFilterPart(e.target.value as OneLiner['part'] | 'Any')}
-                    className="border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-400">
-                    <option value="Any">Any</option>
-                    <option value="Part 1">Part 1</option>
-                    <option value="Part 2">Part 2</option>
-                    <option value="Both">Both</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-gray-500 mb-1">System</label>
-                  <select value={olFilterSystem} onChange={e => setOlFilterSystem(e.target.value)}
-                    className="border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-400">
-                    <option value="Any">Any (all systems)</option>
-                    {Array.from(new Set(liners.map(l => l.system))).sort().map(sys => (
-                      <option key={sys} value={sys}>{sys}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-              <div className="text-xs text-gray-400 mb-3">
-                Matching: <strong>{liners.filter(l => {
-                  if (l.source !== olFilterSource) return false;
-                  if (olFilterPart !== 'Any' && l.part !== olFilterPart) return false;
-                  if (olFilterSystem !== 'Any' && l.system !== olFilterSystem) return false;
-                  return true;
-                }).length}</strong> one-liners will be deleted
-              </div>
-              <button onClick={() => setOlFilterConfirm(true)} disabled={olSyncing}
-                className="bg-red-500 hover:bg-red-600 text-white px-5 py-2.5 rounded-xl text-sm font-bold transition disabled:opacity-60 shadow">
-                🗑️ Delete Matching One-Liners
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* ── MANAGE QUESTIONS TAB ── */}
+        {/* â”€â”€ MANAGE QUESTIONS TAB â”€â”€ */}
         {tab === 'manage' && (
           <div className="space-y-4">
             <div className="flex flex-col sm:flex-row gap-3">
@@ -1334,7 +911,7 @@ export default function AdminPanel({ onDataChange }: { onDataChange?: () => void
                         : 'bg-white text-gray-600 border-gray-300 hover:border-amber-400'
                     }`}
                   >
-                    {p === 'Part 1' ? '📘 ' : p === 'Part 2' ? '📗 ' : ''}{p}
+                    {p === 'Part 1' ? 'ðŸ“˜ ' : p === 'Part 2' ? 'ðŸ“— ' : ''}{p}
                   </button>
                 ))}
               </div>
@@ -1354,7 +931,7 @@ export default function AdminPanel({ onDataChange }: { onDataChange?: () => void
                         : 'bg-white text-gray-600 border-gray-300 hover:border-amber-400'
                     }`}
                   >
-                    {s === 'Passmedicine' ? '🟣 ' : s === 'Pastest' ? '🟢 ' : s === 'Custom' ? '⚙️ ' : s === 'NoSource' ? '⚠️ ' : ''}{s === 'NoSource' ? 'No Source' : s}
+                    {s === 'Passmedicine' ? 'ðŸŸ£ ' : s === 'Pastest' ? 'ðŸŸ¢ ' : s === 'Custom' ? 'âš™ï¸ ' : s === 'NoSource' ? 'âš ï¸ ' : ''}{s === 'NoSource' ? 'No Source' : s}
                   </button>
                 ))}
               </div>
@@ -1363,7 +940,7 @@ export default function AdminPanel({ onDataChange }: { onDataChange?: () => void
 
             {filtered.length === 0 ? (
               <div className="text-center py-20 text-gray-400">
-                <div className="text-5xl mb-4">📭</div>
+                <div className="text-5xl mb-4">ðŸ“­</div>
                 <div className="text-lg font-semibold">No questions found</div>
               </div>
             ) : (
@@ -1374,7 +951,7 @@ export default function AdminPanel({ onDataChange }: { onDataChange?: () => void
                       <div className="flex-1 min-w-0">
                         <div className="flex flex-wrap gap-2 mb-2">
                           <span className={`text-xs font-bold px-2.5 py-0.5 rounded-full ${q.part === 'Part 1' ? 'bg-sky-100 text-sky-700' : 'bg-emerald-100 text-emerald-700'}`}>
-                            {q.part === 'Part 1' ? '📘' : '📗'} {q.part}
+                            {q.part === 'Part 1' ? 'ðŸ“˜' : 'ðŸ“—'} {q.part}
                           </span>
                           {q.source && (
                             <span className={`text-xs font-bold px-2.5 py-0.5 rounded-full border ${QBANK_SOURCE_COLORS[q.source]}`}>
@@ -1388,7 +965,7 @@ export default function AdminPanel({ onDataChange }: { onDataChange?: () => void
                           </span>
                           {q.year && <span className="bg-purple-100 text-purple-700 text-xs px-2.5 py-0.5 rounded-full">{q.year}</span>}
                           {q.imageType && (
-                            <span className="bg-gray-800 text-white text-xs font-bold px-2.5 py-0.5 rounded-full">🖼️ {q.imageType}</span>
+                            <span className="bg-gray-800 text-white text-xs font-bold px-2.5 py-0.5 rounded-full">ðŸ–¼ï¸ {q.imageType}</span>
                           )}
                            <span className="bg-gray-50 text-gray-400 text-xs px-2.5 py-0.5 rounded-full border border-gray-200 font-mono">{q.id}</span>
                          </div>
@@ -1399,13 +976,13 @@ export default function AdminPanel({ onDataChange }: { onDataChange?: () => void
                           onClick={() => setEditingQ(q)}
                           className="bg-blue-50 hover:bg-blue-100 text-blue-700 px-3 py-2 rounded-lg text-xs font-semibold transition"
                         >
-                          ✏️ Edit
+                          âœï¸ Edit
                         </button>
                         <button
                           onClick={() => setDeleteConfirm(q.id)}
                           className="bg-red-50 hover:bg-red-100 text-red-600 px-3 py-2 rounded-lg text-xs font-semibold transition"
                         >
-                          🗑️
+                          ðŸ—‘ï¸
                         </button>
                       </div>
                     </div>
@@ -1416,10 +993,10 @@ export default function AdminPanel({ onDataChange }: { onDataChange?: () => void
           </div>
         )}
 
-        {/* ── MANUAL ADD TAB ── */}
+        {/* â”€â”€ MANUAL ADD TAB â”€â”€ */}
         {tab === 'manual' && (
           <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 space-y-5">
-            <h2 className="text-xl font-bold text-gray-800">✏️ Add Question Manually</h2>
+            <h2 className="text-xl font-bold text-gray-800">âœï¸ Add Question Manually</h2>
 
             {/* Part + System Row */}
             <div className="grid grid-cols-1 sm:grid-cols-5 gap-4">
@@ -1430,8 +1007,8 @@ export default function AdminPanel({ onDataChange }: { onDataChange?: () => void
                   onChange={(e) => setNewQ({ ...newQ, part: e.target.value as MRCPPart, system: e.target.value === 'Part 1' ? 'Cardiology' : 'Cardiology' })}
                   className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
                 >
-                  <option value="Part 1">📘 Part 1</option>
-                  <option value="Part 2">📗 Part 2</option>
+                  <option value="Part 1">ðŸ“˜ Part 1</option>
+                  <option value="Part 2">ðŸ“— Part 2</option>
                 </select>
               </div>
               <div>
@@ -1441,9 +1018,9 @@ export default function AdminPanel({ onDataChange }: { onDataChange?: () => void
                   onChange={(e) => setNewQ({ ...newQ, source: e.target.value as QBankSource })}
                   className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
                 >
-                  <option value="Passmedicine">🟣 Passmedicine</option>
-                  <option value="Pastest">🟢 Pastest</option>
-                  <option value="Custom">⚙️ Custom</option>
+                  <option value="Passmedicine">ðŸŸ£ Passmedicine</option>
+                  <option value="Pastest">ðŸŸ¢ Pastest</option>
+                  <option value="Custom">âš™ï¸ Custom</option>
                 </select>
               </div>
               <div>
@@ -1517,15 +1094,15 @@ export default function AdminPanel({ onDataChange }: { onDataChange?: () => void
 
 | Investigation | Result | Reference Range |
 |---|---|---|
-| Haemoglobin | 7.2 g/dL | 13.5–17.5 g/dL |
-| MCV | 68 fL | 80–100 fL |
+| Haemoglobin | 7.2 g/dL | 13.5â€“17.5 g/dL |
+| MCV | 68 fL | 80â€“100 fL |
 
 What is the most likely diagnosis?`}
               />
             </div>
 
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">Options * (A–E) — click radio to mark correct</label>
+              <label className="block text-sm font-semibold text-gray-700 mb-2">Options * (Aâ€“E) â€” click radio to mark correct</label>
               <div className="space-y-2">
                 {newQ.options.map((opt, i) => (
                   <div key={opt.id} className="flex items-center gap-3">
@@ -1582,11 +1159,11 @@ What is the most likely diagnosis?`}
               />
             </div>
 
-            {/* ── Image Section ── */}
+            {/* â”€â”€ Image Section â”€â”€ */}
             <div className="border border-dashed border-gray-300 rounded-2xl p-5 bg-gray-50 space-y-4">
               <div className="flex items-center gap-2 mb-1">
-                <span className="text-lg">🖼️</span>
-                <h3 className="font-bold text-gray-700">Image Attachment <span className="text-gray-400 font-normal text-xs">(Optional — ECG, X-Ray, Histology, etc.)</span></h3>
+                <span className="text-lg">ðŸ–¼ï¸</span>
+                <h3 className="font-bold text-gray-700">Image Attachment <span className="text-gray-400 font-normal text-xs">(Optional â€” ECG, X-Ray, Histology, etc.)</span></h3>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div className="sm:col-span-2">
@@ -1606,7 +1183,7 @@ What is the most likely diagnosis?`}
                     onChange={(e) => setNewQ({ ...newQ, imageType: (e.target.value || undefined) as ImageType | undefined })}
                     className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
                   >
-                    <option value="">— Select type —</option>
+                    <option value="">â€” Select type â€”</option>
                     {IMAGE_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
                   </select>
                 </div>
@@ -1618,7 +1195,7 @@ What is the most likely diagnosis?`}
                   value={newQ.imageCaption ?? ''}
                   onChange={(e) => setNewQ({ ...newQ, imageCaption: e.target.value })}
                   className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
-                  placeholder="e.g. 12-lead ECG showing ST elevation in V1–V4"
+                  placeholder="e.g. 12-lead ECG showing ST elevation in V1â€“V4"
                 />
               </div>
               {/* Live preview */}
@@ -1646,7 +1223,7 @@ What is the most likely diagnosis?`}
                 onClick={handleAddManual}
                 className="bg-amber-500 hover:bg-amber-600 text-white px-6 py-3 rounded-xl font-bold transition shadow"
               >
-                ➕ Add Question
+                âž• Add Question
               </button>
               <button
                 onClick={() => { setNewQ({ ...EMPTY_Q, part: newQ.part }); setNewQError(''); setNewQSuccess(''); }}
@@ -1658,12 +1235,12 @@ What is the most likely diagnosis?`}
           </div>
         )}
 
-        {/* ── JSON TEMPLATE TAB ── */}
+        {/* â”€â”€ JSON TEMPLATE TAB â”€â”€ */}
         {tab === 'template' && (
           <div className="space-y-6">
             {/* Rich Text Formatting Guide */}
             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-              <h2 className="text-xl font-bold text-gray-800 mb-4">✏️ Rich Text Formatting Guide</h2>
+              <h2 className="text-xl font-bold text-gray-800 mb-4">âœï¸ Rich Text Formatting Guide</h2>
               <p className="text-gray-500 text-sm mb-5">
                 The <strong>stem</strong> and <strong>explanation</strong> fields support rich text formatting.
                 Use these patterns directly in your JSON strings (use <code className="font-mono bg-gray-100 px-1 rounded">\\n</code> for newlines in JSON).
@@ -1671,26 +1248,26 @@ What is the most likely diagnosis?`}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                 {/* Tables */}
                 <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
-                  <div className="font-bold text-slate-800 mb-2 flex items-center gap-2">🗃️ Lab / Data Tables</div>
+                  <div className="font-bold text-slate-800 mb-2 flex items-center gap-2">ðŸ—ƒï¸ Lab / Data Tables</div>
                   <pre className="text-xs font-mono text-slate-600 whitespace-pre overflow-x-auto leading-relaxed">{`| Investigation | Result | Range |
 |---|---|---|
-| Haemoglobin | 7.2 g/dL | 13.5–17.5 |
-| MCV | 68 fL | 80–100 |
-| Ferritin | 4 µg/L | 12–300 |`}</pre>
+| Haemoglobin | 7.2 g/dL | 13.5â€“17.5 |
+| MCV | 68 fL | 80â€“100 |
+| Ferritin | 4 Âµg/L | 12â€“300 |`}</pre>
                   <div className="text-xs text-slate-500 mt-2">In JSON: replace each newline with <code className="bg-white px-1 rounded">\\n</code></div>
                 </div>
                 {/* Bold/italic */}
                 <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
-                  <div className="font-bold text-slate-800 mb-2 flex items-center gap-2">🔤 Inline Formatting</div>
+                  <div className="font-bold text-slate-800 mb-2 flex items-center gap-2">ðŸ”¤ Inline Formatting</div>
                   <div className="space-y-1.5 text-xs font-mono text-slate-600">
-                    <div><span className="text-slate-400">**bold text**</span> → <strong>bold text</strong></div>
-                    <div><span className="text-slate-400">*italic text*</span> → <em>italic text</em></div>
-                    <div><span className="text-slate-400">`inline code`</span> → <code className="bg-white px-1 rounded border border-slate-200">inline code</code></div>
+                    <div><span className="text-slate-400">**bold text**</span> â†’ <strong>bold text</strong></div>
+                    <div><span className="text-slate-400">*italic text*</span> â†’ <em>italic text</em></div>
+                    <div><span className="text-slate-400">`inline code`</span> â†’ <code className="bg-white px-1 rounded border border-slate-200">inline code</code></div>
                   </div>
                 </div>
                 {/* Bullets */}
                 <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
-                  <div className="font-bold text-slate-800 mb-2 flex items-center gap-2">• Bullet Lists</div>
+                  <div className="font-bold text-slate-800 mb-2 flex items-center gap-2">â€¢ Bullet Lists</div>
                   <pre className="text-xs font-mono text-slate-600 whitespace-pre leading-relaxed">{`- First finding
 - Second finding
 - Third finding`}</pre>
@@ -1706,8 +1283,8 @@ What is the most likely diagnosis?`}
               {/* Column alignment */}
               <div className="mt-4 bg-blue-50 border border-blue-200 rounded-xl p-3 text-xs text-blue-800">
                 <strong>Table column alignment:</strong>{' '}
-                <code className="bg-white px-1 rounded mx-0.5">|---|</code> = left (default) ·
-                <code className="bg-white px-1 rounded mx-0.5">|:---:|</code> = center ·
+                <code className="bg-white px-1 rounded mx-0.5">|---|</code> = left (default) Â·
+                <code className="bg-white px-1 rounded mx-0.5">|:---:|</code> = center Â·
                 <code className="bg-white px-1 rounded mx-0.5">|---:|</code> = right
                 <br />
                 <strong>In JSON strings,</strong> use <code className="bg-white px-1 rounded">\n</code> for line breaks within stem/explanation.
@@ -1717,12 +1294,12 @@ What is the most likely diagnosis?`}
 
             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xl font-bold text-gray-800">📄 JSON Template & Format Guide</h2>
+                <h2 className="text-xl font-bold text-gray-800">ðŸ“„ JSON Template & Format Guide</h2>
                 <button
                   onClick={() => { navigator.clipboard.writeText(SAMPLE_JSON); }}
                   className="bg-amber-100 hover:bg-amber-200 text-amber-700 px-4 py-2 rounded-xl text-sm font-semibold transition"
                 >
-                  📋 Copy Template
+                  ðŸ“‹ Copy Template
                 </button>
               </div>
               <pre className="bg-gray-900 text-green-400 rounded-xl p-5 text-xs overflow-x-auto font-mono leading-relaxed whitespace-pre">
@@ -1731,7 +1308,7 @@ What is the most likely diagnosis?`}
             </div>
 
             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-              <h3 className="font-bold text-gray-800 text-lg mb-4">📝 Field Reference</h3>
+              <h3 className="font-bold text-gray-800 text-lg mb-4">ðŸ“ Field Reference</h3>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead className="bg-gray-50 border-b border-gray-200">
@@ -1743,22 +1320,22 @@ What is the most likely diagnosis?`}
                   </thead>
                   <tbody>
                     {[
-                       ['id', 'string', '✅ Yes', 'Unique question identifier', '"q_001"'],
-                       ['part', 'string', '✅ Yes', '"Part 1" or "Part 2"', '"Part 1"'],
-                       ['system', 'string', '✅ Yes', 'Must match a valid MRCP system', '"Cardiology"'],
-                       ['source', 'string', '❌ No', 'Passmedicine | Pastest | Custom (auto-set by upload tab)', '"Passmedicine"'],
-                       ['topic', 'string', '❌ No', 'Sub-topic within system', '"Heart Failure"'],
-                       ['year', 'string', '❌ No', 'Past paper year', '"2023"'],
-                       ['difficulty', 'string', '✅ Yes', 'Easy | Medium | Hard', '"Medium"'],
-                       ['stem', 'string', '✅ Yes', 'Full question text/clinical scenario', '"A 68-year-old..."'],
-                       ['options', 'array', '✅ Yes', 'Array of {id, text} objects', '[{"id":"A","text":"..."}]'],
-                       ['correctAnswer', 'string', '✅ Yes', 'The correct option id', '"C"'],
-                       ['explanation', 'string', '✅ Yes', 'Detailed teaching explanation', '"Beta-blockers..."'],
-                       ['reference', 'string', '❌ No', 'Guideline / textbook reference', '"NICE NG136"'],
-                       ['tags', 'string[]', '❌ No', 'Keywords for search/filter', '["HFrEF","Beta-blocker"]'],
-                       ['imageUrl', 'string', '❌ No', 'Direct URL to image (ECG/X-Ray/etc.)', '"https://example.com/ecg.png"'],
-                       ['imageType', 'string', '❌ No', 'ECG | X-Ray | CT Scan | MRI | Histology | Blood Film | Fundoscopy | Dermatology | Echo | Other', '"ECG"'],
-                       ['imageCaption', 'string', '❌ No', 'Descriptive caption shown under image', '"12-lead ECG showing ST elevation"'],
+                       ['id', 'string', 'âœ… Yes', 'Unique question identifier', '"q_001"'],
+                       ['part', 'string', 'âœ… Yes', '"Part 1" or "Part 2"', '"Part 1"'],
+                       ['system', 'string', 'âœ… Yes', 'Must match a valid MRCP system', '"Cardiology"'],
+                       ['source', 'string', 'âŒ No', 'Passmedicine | Pastest | Custom (auto-set by upload tab)', '"Passmedicine"'],
+                       ['topic', 'string', 'âŒ No', 'Sub-topic within system', '"Heart Failure"'],
+                       ['year', 'string', 'âŒ No', 'Past paper year', '"2023"'],
+                       ['difficulty', 'string', 'âœ… Yes', 'Easy | Medium | Hard', '"Medium"'],
+                       ['stem', 'string', 'âœ… Yes', 'Full question text/clinical scenario', '"A 68-year-old..."'],
+                       ['options', 'array', 'âœ… Yes', 'Array of {id, text} objects', '[{"id":"A","text":"..."}]'],
+                       ['correctAnswer', 'string', 'âœ… Yes', 'The correct option id', '"C"'],
+                       ['explanation', 'string', 'âœ… Yes', 'Detailed teaching explanation', '"Beta-blockers..."'],
+                       ['reference', 'string', 'âŒ No', 'Guideline / textbook reference', '"NICE NG136"'],
+                       ['tags', 'string[]', 'âŒ No', 'Keywords for search/filter', '["HFrEF","Beta-blocker"]'],
+                       ['imageUrl', 'string', 'âŒ No', 'Direct URL to image (ECG/X-Ray/etc.)', '"https://example.com/ecg.png"'],
+                       ['imageType', 'string', 'âŒ No', 'ECG | X-Ray | CT Scan | MRI | Histology | Blood Film | Fundoscopy | Dermatology | Echo | Other', '"ECG"'],
+                       ['imageCaption', 'string', 'âŒ No', 'Descriptive caption shown under image', '"12-lead ECG showing ST elevation"'],
                      ].map(([field, type, req, desc, ex]) => (
                       <tr key={field} className="border-b border-gray-50 hover:bg-gray-50">
                         <td className="px-4 py-3 font-mono text-blue-700 font-semibold">{field}</td>
@@ -1776,7 +1353,7 @@ What is the most likely diagnosis?`}
             {/* Valid systems split by part */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-                <h3 className="font-bold text-gray-800 text-lg mb-3 flex items-center gap-2">📘 Part 1 Systems</h3>
+                <h3 className="font-bold text-gray-800 text-lg mb-3 flex items-center gap-2">ðŸ“˜ Part 1 Systems</h3>
                 <div className="flex flex-wrap gap-2">
                   {PART1_SYSTEMS.map((s) => (
                     <span key={s} className="bg-sky-50 border border-sky-200 text-sky-700 text-xs font-mono px-3 py-1.5 rounded-full">
@@ -1786,7 +1363,7 @@ What is the most likely diagnosis?`}
                 </div>
               </div>
               <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-                <h3 className="font-bold text-gray-800 text-lg mb-3 flex items-center gap-2">📗 Part 2 Systems</h3>
+                <h3 className="font-bold text-gray-800 text-lg mb-3 flex items-center gap-2">ðŸ“— Part 2 Systems</h3>
                 <div className="flex flex-wrap gap-2">
                   {PART2_SYSTEMS.map((s) => (
                     <span key={s} className="bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-mono px-3 py-1.5 rounded-full">
@@ -1799,20 +1376,20 @@ What is the most likely diagnosis?`}
           </div>
         )}
 
-        {/* ── DIAGNOSTICS TAB ── */}
+        {/* â”€â”€ DIAGNOSTICS TAB â”€â”€ */}
         {tab === 'diagnostics' && (
           <div className="space-y-6">
 
-            {/* ── STEP 1: SQL MIGRATION (shown when schema is broken or not checked) ── */}
+            {/* â”€â”€ STEP 1: SQL MIGRATION (shown when schema is broken or not checked) â”€â”€ */}
             {schemaOk !== true && (
               <div className={`rounded-2xl border-2 p-6 ${schemaOk === false ? 'bg-red-50 border-red-400' : 'bg-amber-50 border-amber-300'}`}>
                 <div className="flex items-start gap-3 mb-4">
-                  <span className="text-3xl">{schemaOk === false ? '🚨' : '⚠️'}</span>
+                  <span className="text-3xl">{schemaOk === false ? 'ðŸš¨' : 'âš ï¸'}</span>
                   <div>
                     <h2 className={`text-lg font-extrabold ${schemaOk === false ? 'text-red-800' : 'text-amber-900'}`}>
                       {schemaOk === false
-                        ? 'Database Setup Required — source column is MISSING'
-                        : 'Database Setup — Run Diagnostics to check schema'}
+                        ? 'Database Setup Required â€” source column is MISSING'
+                        : 'Database Setup â€” Run Diagnostics to check schema'}
                     </h2>
                     <p className={`text-sm mt-1 ${schemaOk === false ? 'text-red-700' : 'text-amber-800'}`}>
                       {schemaOk === false
@@ -1825,10 +1402,10 @@ What is the most likely diagnosis?`}
                 {/* SQL Block */}
                 <div className="bg-gray-950 rounded-xl p-4 mb-3 relative">
                   <div className="flex items-center justify-between mb-2">
-                    <span className="text-gray-400 text-xs font-bold uppercase tracking-wider">Supabase SQL Editor → paste & run</span>
+                    <span className="text-gray-400 text-xs font-bold uppercase tracking-wider">Supabase SQL Editor â†’ paste & run</span>
                     <button
                       onClick={() => {
-                        const sql = `-- Run in Supabase Dashboard → SQL Editor\n\n-- Step 1: Add all missing columns\nALTER TABLE questions ADD COLUMN IF NOT EXISTS source text;\nALTER TABLE questions ADD COLUMN IF NOT EXISTS year text;\nALTER TABLE questions ADD COLUMN IF NOT EXISTS topic text;\nALTER TABLE questions ADD COLUMN IF NOT EXISTS reference text;\nALTER TABLE questions ADD COLUMN IF NOT EXISTS tags text[];\nALTER TABLE questions ADD COLUMN IF NOT EXISTS image_url text;\nALTER TABLE questions ADD COLUMN IF NOT EXISTS image_type text;\nALTER TABLE questions ADD COLUMN IF NOT EXISTS image_caption text;\n\n-- Step 2: (Optional) After adding source column, label existing rows as MRCP\n-- Run the "Patch null \u2192 MRCP" button in this page instead, OR:\n-- UPDATE questions SET source = 'MRCP' WHERE source IS NULL;\n\n-- Step 3: Verify\nSELECT source, part, COUNT(*) FROM questions GROUP BY source, part ORDER BY source, part;`;
+                        const sql = `-- Run in Supabase Dashboard â†’ SQL Editor\n\n-- Step 1: Add all missing columns\nALTER TABLE questions ADD COLUMN IF NOT EXISTS source text;\nALTER TABLE questions ADD COLUMN IF NOT EXISTS year text;\nALTER TABLE questions ADD COLUMN IF NOT EXISTS topic text;\nALTER TABLE questions ADD COLUMN IF NOT EXISTS reference text;\nALTER TABLE questions ADD COLUMN IF NOT EXISTS tags text[];\nALTER TABLE questions ADD COLUMN IF NOT EXISTS image_url text;\nALTER TABLE questions ADD COLUMN IF NOT EXISTS image_type text;\nALTER TABLE questions ADD COLUMN IF NOT EXISTS image_caption text;\n\n-- Step 2: (Optional) After adding source column, label existing rows as MRCP\n-- Run the "Patch null \u2192 MRCP" button in this page instead, OR:\n-- UPDATE questions SET source = 'MRCP' WHERE source IS NULL;\n\n-- Step 3: Verify\nSELECT source, part, COUNT(*) FROM questions GROUP BY source, part ORDER BY source, part;`;
                         navigator.clipboard.writeText(sql).then(() => {
                           setSqlCopied(true);
                           setTimeout(() => setSqlCopied(false), 2500);
@@ -1836,7 +1413,7 @@ What is the most likely diagnosis?`}
                       }}
                       className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold px-3 py-1.5 rounded-lg transition"
                     >
-                      {sqlCopied ? '✅ Copied!' : '📋 Copy SQL'}
+                      {sqlCopied ? 'âœ… Copied!' : 'ðŸ“‹ Copy SQL'}
                     </button>
                   </div>
                   <pre className="text-green-400 text-xs font-mono whitespace-pre overflow-x-auto leading-relaxed">{`-- Step 1: Add all missing columns
@@ -1857,11 +1434,11 @@ ORDER BY source, part;`}</pre>
                 </div>
 
                 <div className={`text-sm font-semibold ${schemaOk === false ? 'text-red-700' : 'text-amber-800'}`}>
-                  👆 1. Copy the SQL above &nbsp;→&nbsp; 2. Open{' '}
+                  ðŸ‘† 1. Copy the SQL above &nbsp;â†’&nbsp; 2. Open{' '}
                   <a href="https://supabase.com/dashboard" target="_blank" rel="noopener noreferrer" className="underline">
                     supabase.com/dashboard
                   </a>
-                  &nbsp;→ SQL Editor &nbsp;→ Paste &amp; Run &nbsp;→ 3. Come back and click "Run Diagnostics" to confirm ✅
+                  &nbsp;â†’ SQL Editor &nbsp;â†’ Paste &amp; Run &nbsp;â†’ 3. Come back and click "Run Diagnostics" to confirm âœ…
                 </div>
               </div>
             )}
@@ -1869,7 +1446,7 @@ ORDER BY source, part;`}</pre>
             {/* Schema OK banner */}
             {schemaOk === true && (
               <div className="bg-emerald-50 border border-emerald-300 rounded-2xl p-4 flex items-center gap-3">
-                <span className="text-2xl">✅</span>
+                <span className="text-2xl">âœ…</span>
                 <div>
                   <div className="font-bold text-emerald-800">source column exists in Supabase</div>
                   <div className="text-sm text-emerald-700">Schema is healthy. You can now upload questions to any tab.</div>
@@ -1877,17 +1454,17 @@ ORDER BY source, part;`}</pre>
               </div>
             )}
 
-            {/* ── STEP 2: PATCH NULL SOURCES ── */}
+            {/* â”€â”€ STEP 2: PATCH NULL SOURCES â”€â”€ */}
             {(schemaOk === true || questions.filter((q) => !q.source).length > 0) && (
               <div className={`rounded-2xl border p-6 ${questions.filter((q) => !q.source).length > 0 ? 'bg-orange-50 border-orange-300' : 'bg-white border-gray-100 shadow-sm'}`}>
                 <h3 className="font-bold text-gray-800 mb-1">
                   {questions.filter((q) => !q.source).length > 0
-                    ? `⚠️ ${questions.filter((q) => !q.source).length} questions have no source`
-                    : '✅ All questions have a source'}
+                    ? `âš ï¸ ${questions.filter((q) => !q.source).length} questions have no source`
+                    : 'âœ… All questions have a source'}
                 </h3>
                 <p className="text-sm text-gray-500 mb-4">
                   After running the SQL above, click the button below to label all existing sourceless questions as <strong>MRCP</strong>.
-                  (Your existing 3 618 questions are MRCP questions — this sets that correctly in Supabase.)
+                  (Your existing 3 618 questions are MRCP questions â€” this sets that correctly in Supabase.)
                 </p>
                 <div className="flex flex-wrap gap-3 items-center">
                   <button
@@ -1899,9 +1476,9 @@ ORDER BY source, part;`}</pre>
                         const freshQs = await syncFromSupabase();
                         setQuestions(freshQs);
                         onDataChange?.();
-                        setPatchResult(`✅ Patched ${patched} questions → source = 'MRCP'. Re-synced ${freshQs.length} questions from Supabase.`);
+                        setPatchResult(`âœ… Patched ${patched} questions â†’ source = 'MRCP'. Re-synced ${freshQs.length} questions from Supabase.`);
                       } catch (err: any) {
-                        setPatchResult(`❌ Patch failed: ${err.message ?? err}`);
+                        setPatchResult(`âŒ Patch failed: ${err.message ?? err}`);
                       } finally {
                         setPatchLoading(false);
                       }
@@ -1910,12 +1487,12 @@ ORDER BY source, part;`}</pre>
                     className="flex items-center gap-2 bg-orange-500 hover:bg-orange-600 disabled:opacity-50 text-white px-5 py-2.5 rounded-xl font-bold text-sm transition shadow"
                   >
                     {patchLoading
-                      ? <><span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin inline-block" /> Patching…</>
-                      : `🔧 Patch ${questions.filter((q) => !q.source).length} null → MRCP`}
+                      ? <><span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin inline-block" /> Patchingâ€¦</>
+                      : `ðŸ”§ Patch ${questions.filter((q) => !q.source).length} null â†’ MRCP`}
                   </button>
                 </div>
                 {patchResult && (
-                  <div className={`mt-3 text-sm font-mono p-3 rounded-xl ${patchResult.startsWith('❌') ? 'bg-red-50 text-red-700 border border-red-200' : 'bg-emerald-50 text-emerald-800 border border-emerald-200'}`}>
+                  <div className={`mt-3 text-sm font-mono p-3 rounded-xl ${patchResult.startsWith('âŒ') ? 'bg-red-50 text-red-700 border border-red-200' : 'bg-emerald-50 text-emerald-800 border border-emerald-200'}`}>
                     {patchResult}
                   </div>
                 )}
@@ -1925,7 +1502,7 @@ ORDER BY source, part;`}</pre>
                     {questions.filter((q) => !q.source).slice(0, 15).map((q) => (
                       <div key={q.id} className="flex items-center gap-3 p-2.5 bg-white border border-orange-100 rounded-lg text-sm">
                         <span className="font-mono text-xs text-gray-400 flex-shrink-0">{q.id}</span>
-                        <span className="text-gray-600 truncate flex-1">{q.stem.replace(/\*\*([^*]+)\*\*/g,'$1').replace(/\*([^*]+)\*/g,'$1').replace(/`([^`]+)`/g,'$1').replace(/\|[^|]*\|/g,'').substring(0,65)}…</span>
+                        <span className="text-gray-600 truncate flex-1">{q.stem.replace(/\*\*([^*]+)\*\*/g,'$1').replace(/\*([^*]+)\*/g,'$1').replace(/`([^`]+)`/g,'$1').replace(/\|[^|]*\|/g,'').substring(0,65)}â€¦</span>
                         <span className="bg-orange-100 text-orange-700 text-xs font-bold px-2 py-0.5 rounded-full flex-shrink-0">{q.part}</span>
                       </div>
                     ))}
@@ -1937,9 +1514,9 @@ ORDER BY source, part;`}</pre>
               </div>
             )}
 
-            {/* ── DIAGNOSTICS RUNNER ── */}
+            {/* â”€â”€ DIAGNOSTICS RUNNER â”€â”€ */}
             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-              <h2 className="text-xl font-bold text-gray-800 mb-2">🔬 Run Diagnostics</h2>
+              <h2 className="text-xl font-bold text-gray-800 mb-2">ðŸ”¬ Run Diagnostics</h2>
               <p className="text-gray-500 text-sm mb-5">
                 Performs a fresh direct fetch from Supabase (bypasses cache) and checks the schema.
                 Run after applying the SQL fix above to confirm everything is working.
@@ -1952,40 +1529,41 @@ ORDER BY source, part;`}</pre>
                   className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white px-6 py-2.5 rounded-xl font-bold text-sm transition shadow"
                 >
                   {diagLoading ? (
-                    <><span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin inline-block" /> Running…</>
-                  ) : '🔍 Run Diagnostics & Sync'}
+                    <><span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin inline-block" /> Runningâ€¦</>
+                  ) : 'ðŸ” Run Diagnostics & Sync'}
                 </button>
                 <button
                   onClick={async () => {
                     setDiagLoading(true);
                     try {
+                      invalidateSessionCache();
                       const qs = await syncFromSupabase();
                       setQuestions(qs);
                       onDataChange?.();
-                      setDiagResult(`✅ Force sync complete — ${qs.length} questions loaded from Supabase into app.`);
+                      setDiagResult(`âœ… Force sync complete â€” ${qs.length} questions loaded from Supabase into app.`);
                     } catch (err: any) {
-                      setDiagResult(`❌ Sync failed: ${err.message ?? err}`);
+                      setDiagResult(`âŒ Sync failed: ${err.message ?? err}`);
                     } finally { setDiagLoading(false); }
                   }}
                   disabled={diagLoading}
                   className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white px-6 py-2.5 rounded-xl font-bold text-sm transition shadow"
                 >
-                  🔄 Force Sync from Supabase
+                  ðŸ”„ Force Sync from Supabase
                 </button>
               </div>
 
               {diagResult && (
                 <pre className={`whitespace-pre-wrap text-sm font-mono p-4 rounded-xl border ${
-                  diagResult.includes('❌') ? 'bg-red-50 border-red-200 text-red-700' : 'bg-gray-900 text-green-400 border-gray-700'
+                  diagResult.includes('âŒ') ? 'bg-red-50 border-red-200 text-red-700' : 'bg-gray-900 text-green-400 border-gray-700'
                 }`}>
                   {diagResult}
                 </pre>
               )}
             </div>
 
-            {/* ── BULK REASSIGN SYSTEM ── */}
+            {/* â”€â”€ BULK REASSIGN SYSTEM â”€â”€ */}
             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-              <h2 className="text-xl font-bold text-gray-800 mb-1">🔁 Bulk Reassign System</h2>
+              <h2 className="text-xl font-bold text-gray-800 mb-1">ðŸ” Bulk Reassign System</h2>
               <p className="text-gray-500 text-sm mb-5">
                 Move all questions from one system to another in Supabase. Useful for renaming or reorganising systems without touching individual questions.
               </p>
@@ -2046,7 +1624,7 @@ ORDER BY source, part;`}</pre>
                       (reassignSource === 'Any' || q.source === reassignSource)
                     ).length;
                     return count > 0
-                      ? <span className="text-amber-700 font-semibold">⚠️ {count} question(s) in local cache match — Supabase may differ. Proceed to apply.</span>
+                      ? <span className="text-amber-700 font-semibold">âš ï¸ {count} question(s) in local cache match â€” Supabase may differ. Proceed to apply.</span>
                       : <span className="text-gray-400">No matching questions in local cache for this combination.</span>;
                   })()}
                 </div>
@@ -2058,14 +1636,14 @@ ORDER BY source, part;`}</pre>
                   disabled={!reassignFrom.trim() || !reassignTo.trim() || reassignFrom.trim() === reassignTo.trim()}
                   className="bg-amber-500 hover:bg-amber-600 disabled:opacity-40 text-white px-6 py-2.5 rounded-xl font-bold text-sm transition shadow"
                 >
-                  🔁 Reassign System
+                  ðŸ” Reassign System
                 </button>
               ) : (
                 <div className="flex flex-wrap items-center gap-3 bg-amber-50 border border-amber-300 rounded-xl p-4">
                   <span className="text-sm font-semibold text-amber-800">
-                    Reassign all <strong>"{reassignFrom.trim()}"</strong> → <strong>"{reassignTo.trim()}"</strong>
+                    Reassign all <strong>"{reassignFrom.trim()}"</strong> â†’ <strong>"{reassignTo.trim()}"</strong>
                     {reassignPart !== 'Both' ? ` (${reassignPart})` : ''}
-                    {reassignSource !== 'Any' ? ` · source: ${reassignSource}` : ''} in Supabase?
+                    {reassignSource !== 'Any' ? ` Â· source: ${reassignSource}` : ''} in Supabase?
                   </span>
                   <button
                     onClick={async () => {
@@ -2079,10 +1657,10 @@ ORDER BY source, part;`}</pre>
                         const freshQs = await syncFromSupabase();
                         setQuestions(freshQs);
                         onDataChange?.();
-                        setReassignResult(`✅ Reassigned ${count} question(s): "${reassignFrom.trim()}" → "${reassignTo.trim()}"${part ? ` (${part})` : ''}${source ? ` · source: ${source}` : ''}. Re-synced ${freshQs.length} questions.`);
+                        setReassignResult(`âœ… Reassigned ${count} question(s): "${reassignFrom.trim()}" â†’ "${reassignTo.trim()}"${part ? ` (${part})` : ''}${source ? ` Â· source: ${source}` : ''}. Re-synced ${freshQs.length} questions.`);
                       } catch (err: unknown) {
                         const msg = err instanceof Error ? err.message : String(err);
-                        setReassignResult(`❌ ${msg}`);
+                        setReassignResult(`âŒ ${msg}`);
                       } finally {
                         setReassignLoading(false);
                       }
@@ -2091,7 +1669,7 @@ ORDER BY source, part;`}</pre>
                     className="bg-red-500 hover:bg-red-600 disabled:opacity-50 text-white px-4 py-2 rounded-lg font-bold text-sm transition"
                   >
                     {reassignLoading
-                      ? <><span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin inline-block mr-1" />Updating…</>
+                      ? <><span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin inline-block mr-1" />Updatingâ€¦</>
                       : 'Yes, Reassign'}
                   </button>
                   <button
@@ -2104,7 +1682,7 @@ ORDER BY source, part;`}</pre>
               )}
 
               {reassignResult && (
-                <div className={`mt-3 text-sm font-mono p-3 rounded-xl ${reassignResult.startsWith('❌') ? 'bg-red-50 text-red-700 border border-red-200' : 'bg-emerald-50 text-emerald-800 border border-emerald-200'}`}>
+                <div className={`mt-3 text-sm font-mono p-3 rounded-xl ${reassignResult.startsWith('âŒ') ? 'bg-red-50 text-red-700 border border-red-200' : 'bg-emerald-50 text-emerald-800 border border-emerald-200'}`}>
                   {reassignResult}
                 </div>
               )}
@@ -2112,34 +1690,34 @@ ORDER BY source, part;`}</pre>
 
             {/* Quick reference */}
             <div className="bg-slate-50 border border-slate-200 rounded-2xl p-6">
-              <h3 className="font-bold text-slate-700 mb-3">📖 Quick Reference</h3>
+              <h3 className="font-bold text-slate-700 mb-3">ðŸ“– Quick Reference</h3>
               <div className="space-y-3 text-sm text-slate-600">
                 <div className="flex gap-2">
-                  <span className="font-bold text-slate-700 shrink-0">Step 1 —</span>
-                  <span>Run the SQL migration in Supabase Dashboard → SQL Editor (copy button above)</span>
+                  <span className="font-bold text-slate-700 shrink-0">Step 1 â€”</span>
+                  <span>Run the SQL migration in Supabase Dashboard â†’ SQL Editor (copy button above)</span>
                 </div>
                 <div className="flex gap-2">
-                  <span className="font-bold text-slate-700 shrink-0">Step 2 —</span>
-                  <span>Come back here → <strong>"Run Diagnostics"</strong> → confirm <code className="bg-white border px-1 rounded">source column: EXISTS</code></span>
+                  <span className="font-bold text-slate-700 shrink-0">Step 2 â€”</span>
+                  <span>Come back here â†’ <strong>"Run Diagnostics"</strong> â†’ confirm <code className="bg-white border px-1 rounded">source column: EXISTS</code></span>
                 </div>
                 <div className="flex gap-2">
-                  <span className="font-bold text-slate-700 shrink-0">Step 3 —</span>
-                  <span>Click <strong>"Patch null → MRCP"</strong> to label all 3 618 existing questions as MRCP source</span>
+                  <span className="font-bold text-slate-700 shrink-0">Step 3 â€”</span>
+                  <span>Click <strong>"Patch null â†’ MRCP"</strong> to label all 3 618 existing questions as MRCP source</span>
                 </div>
                 <div className="flex gap-2">
-                  <span className="font-bold text-slate-700 shrink-0">Step 4 —</span>
-                  <span>Go to <strong>PM Part 2</strong> upload tab and re-upload your Passmedicine questions — they will now save correctly</span>
+                  <span className="font-bold text-slate-700 shrink-0">Step 4 â€”</span>
+                  <span>Go to <strong>PM Part 2</strong> upload tab and re-upload your Passmedicine questions â€” they will now save correctly</span>
                 </div>
               </div>
             </div>
           </div>
         )}
 
-        {/* ── USERS TAB ── */}
+        {/* â”€â”€ USERS TAB â”€â”€ */}
         {tab === 'users' && (
           <div className="space-y-6">
             <div className="flex items-center gap-3 mb-2">
-              <h2 className="text-xl font-bold text-gray-800">👥 User Management</h2>
+              <h2 className="text-xl font-bold text-gray-800">ðŸ‘¥ User Management</h2>
               <span className="bg-amber-100 text-amber-700 text-xs font-bold px-3 py-1 rounded-full">Admin Only</span>
             </div>
             <UserManagement />
@@ -2147,80 +1725,11 @@ ORDER BY source, part;`}</pre>
         )}
       </div>
 
-      {/* Textbook Delete Modal */}
-      {tbDeleteConfirm && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-sm w-full">
-            <div className="text-4xl text-center mb-3">📚</div>
-            <h3 className="text-lg font-bold text-gray-900 text-center mb-2">Delete Textbook?</h3>
-            <p className="text-gray-500 text-sm text-center mb-6">This will remove the textbook from the platform. Student notes will be preserved locally.</p>
-            <div className="flex gap-3">
-              <button onClick={() => setTbDeleteConfirm(null)} className="flex-1 border border-gray-300 rounded-xl py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 transition">Cancel</button>
-              <button onClick={() => handleDeleteTextbook(tbDeleteConfirm)} className="flex-1 bg-red-500 text-white rounded-xl py-2.5 text-sm font-semibold hover:bg-red-600 transition">Delete</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* OneLiner Clear Confirm Modal */}
-      {olClearConfirm && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-sm w-full">
-            <div className="text-4xl text-center mb-3">💡</div>
-            <h3 className="text-lg font-bold text-gray-900 text-center mb-2">Clear All {olClearConfirm} One-Liners?</h3>
-            <p className="text-gray-500 text-sm text-center mb-6">This will permanently delete all {liners.filter(l => l.source === olClearConfirm).length} {olClearConfirm} one-liners.</p>
-            <div className="flex gap-3">
-              <button onClick={() => setOlClearConfirm(null)} className="flex-1 border border-gray-300 rounded-xl py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 transition">Cancel</button>
-              <button onClick={async () => {
-                  clearOneLiners(olClearConfirm!);
-                  await clearOneLinersInSupabase(olClearConfirm!);
-                  setLiners(getOneLiners());
-                  setOlClearConfirm(null);
-                }}
-                className="flex-1 bg-red-500 text-white rounded-xl py-2.5 text-sm font-semibold hover:bg-red-600 transition">Clear All</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* OneLiner Targeted-Delete Confirm Modal */}
-      {olFilterConfirm && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-sm w-full">
-            <div className="text-4xl text-center mb-3">🗑️</div>
-            <h3 className="text-lg font-bold text-gray-900 text-center mb-2">Delete One-Liners?</h3>
-            <p className="text-gray-500 text-sm text-center mb-2">
-              This will permanently delete all matching one-liners from <strong>both</strong> Supabase and local storage.
-            </p>
-            <div className="bg-gray-50 rounded-xl px-4 py-3 text-sm text-gray-700 mb-5 text-center space-y-0.5">
-              <div><strong>Source:</strong> {olFilterSource}</div>
-              <div><strong>Part:</strong> {olFilterPart}</div>
-              <div><strong>System:</strong> {olFilterSystem}</div>
-              <div className="pt-1 text-red-600 font-bold">
-                {liners.filter(l => {
-                  if (l.source !== olFilterSource) return false;
-                  if (olFilterPart !== 'Any' && l.part !== olFilterPart) return false;
-                  if (olFilterSystem !== 'Any' && l.system !== olFilterSystem) return false;
-                  return true;
-                }).length} one-liners will be removed
-              </div>
-            </div>
-            <div className="flex gap-3">
-              <button onClick={() => setOlFilterConfirm(false)} className="flex-1 border border-gray-300 rounded-xl py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 transition">Cancel</button>
-              <button onClick={handleDeleteByFilter} disabled={olSyncing}
-                className="flex-1 bg-red-500 text-white rounded-xl py-2.5 text-sm font-semibold hover:bg-red-600 transition disabled:opacity-60">
-                {olSyncing ? '⏳ Deleting…' : 'Delete'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Delete Confirmation Modal */}
       {deleteConfirm && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-sm w-full">
-            <div className="text-4xl text-center mb-3">🗑️</div>
+            <div className="text-4xl text-center mb-3">ðŸ—‘ï¸</div>
             <h3 className="text-lg font-bold text-gray-900 text-center mb-2">Delete Question?</h3>
             <p className="text-gray-500 text-sm text-center mb-6">This action cannot be undone.</p>
             <div className="flex gap-3">
@@ -2240,8 +1749,8 @@ ORDER BY source, part;`}</pre>
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-y-auto">
           <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-2xl w-full my-4">
             <div className="flex items-center justify-between mb-5">
-              <h3 className="text-xl font-bold text-gray-900">✏️ Edit Question</h3>
-              <button onClick={() => setEditingQ(null)} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">✕</button>
+              <h3 className="text-xl font-bold text-gray-900">âœï¸ Edit Question</h3>
+              <button onClick={() => setEditingQ(null)} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">âœ•</button>
             </div>
             <div className="space-y-4">
               <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
@@ -2252,8 +1761,8 @@ ORDER BY source, part;`}</pre>
                     onChange={(e) => setEditingQ({ ...editingQ, part: e.target.value as MRCPPart })}
                     className="w-full border border-gray-300 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                   >
-                    <option value="Part 1">📘 Part 1</option>
-                    <option value="Part 2">📗 Part 2</option>
+                    <option value="Part 1">ðŸ“˜ Part 1</option>
+                    <option value="Part 2">ðŸ“— Part 2</option>
                   </select>
                 </div>
                 <div>
@@ -2263,9 +1772,9 @@ ORDER BY source, part;`}</pre>
                     onChange={(e) => setEditingQ({ ...editingQ, source: e.target.value as QBankSource })}
                     className="w-full border border-gray-300 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                   >
-                    <option value="Passmedicine">🟣 Passmedicine</option>
-                    <option value="Pastest">🟢 Pastest</option>
-                    <option value="Custom">⚙️ Custom</option>
+                    <option value="Passmedicine">ðŸŸ£ Passmedicine</option>
+                    <option value="Pastest">ðŸŸ¢ Pastest</option>
+                    <option value="Custom">âš™ï¸ Custom</option>
                   </select>
                 </div>
                 <div>
@@ -2323,7 +1832,7 @@ ORDER BY source, part;`}</pre>
 
               {/* Image fields in edit modal */}
               <div className="border border-dashed border-gray-200 rounded-xl p-4 bg-gray-50 space-y-3">
-                <p className="text-xs font-bold text-gray-600 flex items-center gap-1">🖼️ Image Attachment <span className="font-normal text-gray-400">(optional)</span></p>
+                <p className="text-xs font-bold text-gray-600 flex items-center gap-1">ðŸ–¼ï¸ Image Attachment <span className="font-normal text-gray-400">(optional)</span></p>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <div className="sm:col-span-2">
                     <label className="text-xs font-semibold text-gray-600 block mb-1">Image URL</label>
@@ -2342,7 +1851,7 @@ ORDER BY source, part;`}</pre>
                       onChange={(e) => setEditingQ({ ...editingQ, imageType: (e.target.value || undefined) as ImageType | undefined })}
                       className="w-full border border-gray-300 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                     >
-                      <option value="">— Select —</option>
+                      <option value="">â€” Select â€”</option>
                       {IMAGE_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
                     </select>
                   </div>
@@ -2354,7 +1863,7 @@ ORDER BY source, part;`}</pre>
                     value={editingQ.imageCaption ?? ''}
                     onChange={(e) => setEditingQ({ ...editingQ, imageCaption: e.target.value })}
                     className="w-full border border-gray-300 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="e.g. 12-lead ECG showing ST elevation in V1–V4"
+                    placeholder="e.g. 12-lead ECG showing ST elevation in V1â€“V4"
                   />
                 </div>
                 {editingQ.imageUrl && editingQ.imageUrl.startsWith('http') && (
@@ -2390,7 +1899,7 @@ ORDER BY source, part;`}</pre>
       {clearConfirm && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-sm w-full">
-            <div className="text-4xl text-center mb-3">⚠️</div>
+            <div className="text-4xl text-center mb-3">âš ï¸</div>
             <h3 className="text-lg font-bold text-gray-900 text-center mb-2">Clear ALL Data?</h3>
             <p className="text-gray-500 text-sm text-center mb-6">This will delete ALL questions, stats, and session history. This cannot be undone!</p>
             <div className="flex gap-3">

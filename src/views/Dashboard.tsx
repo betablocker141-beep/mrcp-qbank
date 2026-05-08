@@ -7,8 +7,6 @@ import {
   BookOpenIcon, TargetIcon, TrendingUpIcon, PlayIcon,
   CalendarIcon, ActivityIcon, ArrowRightIcon,
 } from '../components/Icons';
-import { getTextbooks } from '../textbookStore';
-import { getOneLiners } from '../oneLinerStore';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 type DashboardTab = 'mrcp1' | 'mrcp2' | 'pm1' | 'pm2' | 'pt1' | 'pt2';
@@ -288,10 +286,6 @@ export default function Dashboard({
     if (activeTab === 'mrcp2') return (h.part ?? 'Part 1') === 'Part 2' && !['Passmedicine','Pastest'].includes(h.source ?? '');
     return false;
   });
-
-  // Textbooks + one-liners counts (for feature cards)
-  const tbCount = getTextbooks().length;
-  const olCount = getOneLiners().length;
 
   // ── Tab click handler ────────────────────────────────────────────────────
   const handleTabClick = (tab: DashboardTab) => {
@@ -600,92 +594,6 @@ export default function Dashboard({
         </div>
       )}
 
-      {/* ── Daily Mock Banner ────────────────────────────────────────────────── */}
-      <div className="max-w-7xl mx-auto px-4 pb-6">
-        <button
-          onClick={() => setView('daily-mock')}
-          className="group w-full relative overflow-hidden bg-gradient-to-r from-slate-900 via-indigo-900 to-slate-900 rounded-2xl p-6 shadow-xl hover:shadow-2xl transition-all text-left hover:-translate-y-0.5 border border-white/10"
-        >
-          {/* Decorative blobs */}
-          <div className="absolute -top-10 -right-10 w-48 h-48 rounded-full bg-indigo-500/15 pointer-events-none" />
-          <div className="absolute -bottom-8 left-1/3 w-32 h-32 rounded-full bg-blue-500/10 pointer-events-none" />
-
-          <div className="relative flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-            <div className="flex items-center gap-4">
-              <div className="w-14 h-14 bg-white/10 rounded-2xl flex items-center justify-center text-3xl shadow-sm border border-white/10 flex-shrink-0">
-                🎯
-              </div>
-              <div>
-                <div className="inline-flex items-center gap-1.5 bg-amber-500/20 border border-amber-400/30 text-amber-300 text-xs font-bold px-2.5 py-1 rounded-full mb-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
-                  Daily Challenge
-                </div>
-                <h3 className="text-white text-lg font-extrabold">Today's Daily Mock Exam</h3>
-                <p className="text-blue-300 text-sm">
-                  20 questions · Same for everyone · Part 1 & Part 2 · Live leaderboard
-                </p>
-              </div>
-            </div>
-            <div className="flex items-center gap-2 bg-white text-slate-900 font-extrabold text-sm px-5 py-2.5 rounded-xl shadow-lg group-hover:scale-105 transition-all flex-shrink-0">
-              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
-              Start Daily Mock
-            </div>
-          </div>
-        </button>
-      </div>
-
-      {/* ── Feature Cards — Textbooks & One-Liners ───────────────────────── */}
-      <div className="max-w-7xl mx-auto px-4 pb-12">
-        <div className="mb-5">
-          <h2 className="text-xl font-bold text-gray-900">Study Resources</h2>
-          <p className="text-gray-500 text-sm mt-0.5">Additional tools to support your MRCP preparation</p>
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-          {/* Textbooks card */}
-          <button
-            onClick={() => setView('textbooks')}
-            className="group bg-gradient-to-br from-violet-600 to-purple-700 text-white rounded-2xl p-6 shadow-lg hover:shadow-xl transition-all text-left hover:-translate-y-0.5"
-          >
-            <div className="flex items-start justify-between mb-4">
-              <div className="w-14 h-14 bg-white/20 rounded-2xl flex items-center justify-center text-3xl shadow-sm">
-                📚
-              </div>
-              <div className="bg-white/20 px-3 py-1 rounded-full text-xs font-bold">
-                {tbCount} textbook{tbCount !== 1 ? 's' : ''}
-              </div>
-            </div>
-            <h3 className="text-lg font-extrabold mb-1">Passmedicine Textbooks</h3>
-            <p className="text-violet-200 text-sm mb-4">
-              Read, annotate and highlight Passmedicine textbooks for Part 1 & Part 2
-            </p>
-            <div className="flex items-center gap-1.5 text-sm font-bold text-white group-hover:gap-2.5 transition-all">
-              Open Textbooks <ArrowRightIcon className="w-4 h-4" />
-            </div>
-          </button>
-
-          {/* One-liners card */}
-          <button
-            onClick={() => setView('oneliners')}
-            className="group bg-gradient-to-br from-amber-500 to-orange-600 text-white rounded-2xl p-6 shadow-lg hover:shadow-xl transition-all text-left hover:-translate-y-0.5"
-          >
-            <div className="flex items-start justify-between mb-4">
-              <div className="w-14 h-14 bg-white/20 rounded-2xl flex items-center justify-center text-3xl shadow-sm">
-                💡
-              </div>
-              <div className="bg-white/20 px-3 py-1 rounded-full text-xs font-bold">
-                {olCount} pearl{olCount !== 1 ? 's' : ''}
-              </div>
-            </div>
-            <h3 className="text-lg font-extrabold mb-1">One-Liners & Clinical Pearls</h3>
-            <p className="text-amber-100 text-sm mb-4">
-              High-yield facts from Passmedicine & Pastest in flashcard and list format
-            </p>
-            <div className="flex items-center gap-1.5 text-sm font-bold text-white group-hover:gap-2.5 transition-all">
-              Browse Pearls <ArrowRightIcon className="w-4 h-4" />
-            </div>
-          </button>
-        </div>
-      </div>
     </div>
   );
 }
