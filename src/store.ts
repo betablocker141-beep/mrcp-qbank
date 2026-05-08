@@ -7,9 +7,16 @@ import { supabase, rowToQuestion, questionToRow } from './lib/supabase';
 let _sessionCache: Question[] | null = null;
 let _sessionFetchPromise: Promise<Question[]> | null = null;
 
+// ── Persistent TTL cache ─────────────────────────────────────
+// Skips Supabase on page reload if questions were synced within the last 30 minutes.
+// Cleared whenever invalidateSessionCache() is called (i.e. after any mutation).
+const SYNC_TS_KEY = '_qs_sync_ts';
+const SYNC_TTL_MS = 30 * 60 * 1000; // 30 minutes
+
 export function invalidateSessionCache(): void {
   _sessionCache = null;
   _sessionFetchPromise = null;
+  try { localStorage.removeItem(SYNC_TS_KEY); } catch { /* ignore */ }
 }
 
 // ── Supabase async functions ────────────────────────────────
@@ -25,6 +32,20 @@ export async function syncFromSupabase(): Promise<Question[]> {
 
   // Deduplicate concurrent calls — only one fetch in flight at a time
   if (_sessionFetchPromise) return _sessionFetchPromise;
+
+  // Skip Supabase if questions were synced within the TTL window — use localStorage instead.
+  // This prevents a full DB fetch on every page reload for students.
+  // The TTL is cleared by invalidateSessionCache() after any admin mutation.
+  try {
+    const lastSync = Number(localStorage.getItem(SYNC_TS_KEY) ?? 0);
+    if (Date.now() - lastSync < SYNC_TTL_MS) {
+      const cached = getQuestions();
+      if (cached.length > 0) {
+        _sessionCache = cached;
+        return cached;
+      }
+    }
+  } catch { /* localStorage unavailable — fall through to Supabase */ }
 
   _sessionFetchPromise = (async () => {
     try {
@@ -55,6 +76,7 @@ export async function syncFromSupabase(): Promise<Question[]> {
       if (allData.length > 0) {
         const questions = allData.map(rowToQuestion);
         saveQuestions(questions);
+        try { localStorage.setItem(SYNC_TS_KEY, String(Date.now())); } catch { /* ignore */ }
         _sessionCache = questions;
         return questions;
       }
